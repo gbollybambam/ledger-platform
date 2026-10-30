@@ -1,0 +1,46 @@
+# Secrets. Never commit these.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Dependencies
+node_modules/
+vendor/
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Tests and coverage
+coverage/
+.nyc_output/
+.pytest_cache/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Local data
+*.sqlite
+*.sqlite3
+pgdata/
+.docker-data/
+
+# Editors and OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# Local tool config
+.copilot/local/
