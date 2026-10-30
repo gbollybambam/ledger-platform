@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # 1) Build the TypeScript code.
-FROM node:24-alpine AS build
+FROM node:25-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -10,13 +10,13 @@ COPY src ./src
 RUN npm run build
 
 # 2) Install only the production dependencies.
-FROM node:24-alpine AS prod-deps
+FROM node:25-alpine AS prod-deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 # 3) The final image. It runs as a non-root user and has no build tools.
-FROM node:24-alpine AS runtime
+FROM node:25-alpine AS runtime
 ENV NODE_ENV=production \
     APP_HOST=0.0.0.0 \
     APP_PORT=3000
