@@ -1,0 +1,39 @@
+# Local databases. The credentials are fake and for this machine only.
+# The admin user is a superuser. It is used only by `npm run db:bootstrap`.
+# The service itself connects as the limited `ledger_app` role.
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ledger_admin
+      POSTGRES_PASSWORD: change-me
+      POSTGRES_DB: ledger_dev
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - ledger_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ledger_admin -d ledger_dev']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  db_test:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ledger_admin
+      POSTGRES_PASSWORD: change-me
+      POSTGRES_DB: ledger_test
+    ports:
+      - '127.0.0.1:5433:5432'
+    # Test data lives in memory. It is fast and disappears on restart.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ledger_admin -d ledger_test']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  ledger_dev_data:

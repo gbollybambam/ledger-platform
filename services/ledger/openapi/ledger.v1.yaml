@@ -1,0 +1,174 @@
+openapi: 3.0.3
+info:
+  title: Ledger API
+  version: 0.1.0
+  description: |
+    A double-entry ledger service.
+
+    Rules for this contract (see docs/decisions/0018-openapi-contract-first.md):
+    - This file is the source of truth. A feature PR updates it with the code.
+    - Versioned paths start with `/v1`. Changes inside `/v1` are additive only.
+    - Money amounts are integer strings in minor units, for example "150000".
+    - Every POST needs an `Idempotency-Key` header.
+    - Every error uses the `Error` shape below.
+servers:
+  - url: http://localhost:3000
+    description: Local development
+tags:
+  - name: Health
+    description: Liveness and readiness. No authentication.
+paths:
+  /health:
+    get:
+      tags: [Health]
+      operationId: getHealth
+      summary: Liveness. The process is up. It does not touch the database.
+      security: []
+      responses:
+        '200':
+          description: The process is up.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+  /health/ready:
+    get:
+      tags: [Health]
+      operationId: getReady
+      summary: Readiness. The process can reach the database.
+      security: []
+      responses:
+        '200':
+          description: Ready.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, db]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                  db:
+                    type: string
+                    enum: [up]
+        '503':
+          description: The database is not reachable.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, db]
+                properties:
+                  status:
+                    type: string
+                    enum: [unavailable]
+                  db:
+                    type: string
+                    enum: [down]
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: A client API key. Created by an operator. Shown once.
+  headers:
+    RequestId:
+      description: A unique ID for this request. Quote it when you report a problem.
+      schema:
+        type: string
+        format: uuid
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        A unique string chosen by the client for each new operation.
+        Send the same value when you retry the same operation.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+  schemas:
+    Amount:
+      type: string
+      pattern: '^[1-9][0-9]{0,17}$'
+      description: A positive integer in minor units, as a string. No decimals. No sign.
+      example: '150000'
+    Currency:
+      type: string
+      pattern: '^[A-Z]{3}$'
+      description: An ISO 4217 code that the ledger allows.
+      example: NGN
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, request_id]
+          properties:
+            code:
+              type: string
+              description: A stable code for programs to read.
+              example: insufficient_funds
+            message:
+              type: string
+              description: A short text for people. It never holds internal details.
+            request_id:
+              type: string
+              format: uuid
+  responses:
+    Unauthorized:
+      description: The API key is missing, wrong, or revoked.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: The API key does not have the needed scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InvalidRequest:
+      description: The request is not valid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: The thing does not exist, or this client may not see it.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: The request conflicts with the current state.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unprocessable:
+      description: The request is valid, but a business rule refuses it.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+security:
+  - bearerAuth: []
