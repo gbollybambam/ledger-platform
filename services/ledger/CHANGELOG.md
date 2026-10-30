@@ -5,6 +5,8 @@ The versions follow Semantic Versioning. Tags look like `ledger/v0.1.0`. See `..
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-30
+
 ### Added
 - Planning documents: PRD, RFC-001, invariants, roadmap, version plan, research notes, and decision records DEC-0001 to DEC-0019.
 - Service skeleton: TypeScript, Fastify, PostgreSQL 17, Vitest, ESLint with money rules, Prettier.

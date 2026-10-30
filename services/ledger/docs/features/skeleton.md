@@ -1,5 +1,5 @@
 # Feature: Skeleton (Phase 2)
-Status: in progress
+Status: done
 
 Goal:
 A working empty service that proves the whole toolchain: TypeScript, lint with money rules, tests against a real PostgreSQL 17, least-privilege database roles, migrations, an OpenAPI contract with a drift test, a Docker image, and CI.
@@ -10,17 +10,17 @@ Out of scope:
 - Anything about the gateway or reconciliation.
 
 Done when:
-- [ ] `npm run lint`, `format:check`, `typecheck`, `openapi:lint`, `test`, and `build` pass on my machine
-- [ ] `npm run db:up` starts both databases, `npm run db:setup` creates the roles and applies migrations, and the tests pass against the test database
-- [ ] `GET /health` and `GET /health/ready` work. Readiness reaches the real Postgres as the limited `ledger_app` role
-- [ ] The app role is not a superuser, cannot create tables, and cannot touch the migration history (test)
-- [ ] Unknown routes use the standard error body. A 500 hides internal details
-- [ ] The OpenAPI file is valid, and the routes match it (test)
-- [ ] `docker build` works, and the image runs as a non-root user
-- [ ] CI is green on GitHub, with a Postgres 17 service
-- [ ] Branch protection on `main` requires a PR and the CI check
-- [ ] Secret scanning and push protection are on (if the plan allows)
-- [ ] `.env` is not tracked by git (`git status` shows nothing for it)
+- [x] `npm run lint`, `format:check`, `typecheck`, `openapi:lint`, `test`, and `build` pass on my machine
+- [x] `npm run db:up` starts both databases, `npm run db:setup` creates the roles and applies migrations, and the tests pass against the test database
+- [x] `GET /health` and `GET /health/ready` work. Readiness reaches the real Postgres as the limited `ledger_app` role
+- [x] The app role is not a superuser, cannot create tables, and cannot touch the migration history (test)
+- [x] Unknown routes use the standard error body. A 500 hides internal details
+- [x] The OpenAPI file is valid, and the routes match it (test)
+- [x] `docker build` works, and the image runs as a non-root user
+- [x] CI is green on GitHub, with a Postgres 17 service
+- [x] Branch protection on `main` requires a PR and the CI check
+- [x] Secret scanning and push protection are on (if the plan allows)
+- [x] `.env` is not tracked by git (`git status` shows nothing for it)
 
 Complex parts (CLI execution with extra oversight / Claude escalation if blocked):
 None. This feature was built and checked by the planner.

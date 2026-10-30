@@ -10,7 +10,7 @@ The process for each feature is in `docs/process/feature-loop.md` at the reposit
 
 | # | Work | Status | Tag |
 | - | ---- | ------ | --- |
-| 0 | Skeleton: project, roles, migrations, OpenAPI contract, CI (`docs/features/skeleton.md`) | in progress | ledger/v0.1.0 |
+| 0 | Skeleton: project, roles, migrations, OpenAPI contract, CI (`docs/features/skeleton.md`) | done | ledger/v0.1.0 |
 
 ## Features
 
