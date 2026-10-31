@@ -17,6 +17,8 @@ servers:
 tags:
   - name: Health
     description: Liveness and readiness. No authentication.
+  - name: Identity
+    description: Client identity and authorization.
 paths:
   /health:
     get:
@@ -80,6 +82,36 @@ paths:
                   db:
                     type: string
                     enum: [down]
+  /v1/whoami:
+    get:
+      tags: [Identity]
+      operationId: getWhoami
+      summary: Return the identity and scopes of the authenticated client.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The authenticated client.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [client_id, name, scopes]
+                properties:
+                  client_id:
+                    type: string
+                    format: uuid
+                  name:
+                    type: string
+                  scopes:
+                    type: array
+                    items:
+                      type: string
+                      enum: [ledger:read, ledger:write]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 components:
   securitySchemes:
     bearerAuth:
