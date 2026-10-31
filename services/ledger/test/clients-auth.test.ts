@@ -317,9 +317,9 @@ describe('F1 authentication integration', () => {
       expect(response.statusCode).toBe(401);
       expect(response.headers['content-type']).toContain('application/json');
       expect(response.headers['www-authenticate']).toBe('Bearer');
-      const body = response.json() as {
+      const body = response.json<{
         error: { code: string; message: string; request_id: string };
-      };
+      }>();
       expect(body.error.request_id).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-[4-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
       );
@@ -414,7 +414,7 @@ describe('F1 authentication integration', () => {
     expect(after.statusCode).toBe(401);
     expect(after.headers['content-type']).toBe(before.headers['content-type']);
     expect(after.headers['www-authenticate']).toBe('Bearer');
-    expect(after.json().error).toMatchObject({
+    expect(after.json<{ error: { code: string; message: string } }>().error).toMatchObject({
       code: 'unauthorized',
       message: 'Unauthorized',
     });

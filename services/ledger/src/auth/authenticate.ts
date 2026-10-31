@@ -84,7 +84,7 @@ export async function authenticateUnknownRequest(
 
 export function registerAuthentication(app: FastifyInstance, pool: Pool): void {
   app.addHook('onRequest', async (request) => {
-    const access = request.routeOptions.config.access as Access | undefined;
+    const access = request.routeOptions.config.access;
     await authenticateForAccess(request, pool, access);
   });
 

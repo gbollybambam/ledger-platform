@@ -51,7 +51,7 @@ export function buildApp({ pool, logger = false }: AppDeps): FastifyInstance {
   app.decorate('routeTable', routeTable);
   app.addHook('onRoute', (route) => {
     if (route.config?.access === undefined) {
-      throw new Error(`Route ${route.method} ${route.url} must declare access`);
+      throw new Error(`Route ${String(route.method)} ${route.url} must declare access`);
     }
     for (const method of [route.method].flat()) {
       if (!IGNORED_METHODS.has(method)) {
