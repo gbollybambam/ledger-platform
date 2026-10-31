@@ -145,3 +145,4 @@ Complex parts (CLI execution with extra oversight / Claude escalation if blocked
 Review log:
 - Pass 1: findings, fixed, moved to backlog
 - Pass 2: findings, fixed, moved to backlog
+- Planner review (complex parts): 6 fix-now, 6 backlog. Main finding: the hook failed open for unknown paths.
