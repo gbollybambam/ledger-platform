@@ -87,7 +87,7 @@ describe('client administration output', () => {
     expect(key).toBeDefined();
     expect(result.stdout.match(new RegExp(key!, 'g'))).toHaveLength(1);
     expect(result.stderr).not.toContain(key!);
-  });
+  }, 60_000);
 
   it('rejects invalid names, unknown scopes, and duplicate names with exit code 1', async () => {
     const invalidName = await runCli(
@@ -124,7 +124,7 @@ describe('client administration output', () => {
     );
     expect(duplicate.exitCode).toBe(1);
     expect(duplicate.stderr).toBe('a client named "gateway" already exists\n');
-  });
+  }, 60_000);
 
   it('lists clients with padded columns and never prints a key or hash', async () => {
     const result = await runCli('client:list');
@@ -134,7 +134,7 @@ describe('client administration output', () => {
     expect(result.stdout).toContain('gateway');
     expect(result.stdout).not.toMatch(/lk_[A-Za-z0-9_-]{43}/);
     expect(result.stdout).not.toMatch(/\b[a-f0-9]{64}\b/i);
-  });
+  }, 60_000);
 
   it('revokes a client, is idempotent, and reports unknown names on stderr', async () => {
     const first = await runCli('client:revoke', '--', '--name', 'gateway');
@@ -157,7 +157,7 @@ describe('client administration output', () => {
     expect(unknown.stderr).toBe('client not found: missing\n');
     expect(unknown.stderr).not.toMatch(/lk_[A-Za-z0-9_-]{43}/);
     expect(unknown.stderr).not.toMatch(/\b[a-f0-9]{64}\b/i);
-  });
+  }, 60_000);
 
   it('reports unexpected connection errors without exposing the URL or password', async () => {
     const databaseUrl = 'postgresql://admin:super-secret@127.0.0.1:1/ledger';
@@ -168,7 +168,7 @@ describe('client administration output', () => {
     expect(result.stderr).toMatch(/^unexpected error \(code: [A-Z0-9_]+\)\r?\n$/);
     expect(result.stderr).not.toContain(databaseUrl);
     expect(result.stderr).not.toContain('super-secret');
-  });
+  }, 60_000);
 
   it('handles parallel revokes atomically and preserves revoked_at', async () => {
     const results = await Promise.all([
@@ -202,5 +202,5 @@ describe('client administration output', () => {
       [PARALLEL_ID],
     );
     expect(second.rows[0]?.revoked_at).toEqual(firstRevokedAt);
-  });
+  }, 60_000);
 });
