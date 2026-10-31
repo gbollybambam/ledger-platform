@@ -1,4 +1,5 @@
 import { exec } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -6,8 +7,15 @@ import { testUrls } from './helpers/db.js';
 
 const execAsync = promisify(exec);
 const cwd = process.cwd();
+const PARALLEL_ID = '00000000-0000-0000-0000-000000000040';
+const PARALLEL_NAME = 'parallel-revoke';
+const PARALLEL_KEY = `lk_${'R'.repeat(43)}`;
 
 async function runCli(...args: string[]) {
+  return runCliWithEnv({}, ...args);
+}
+
+async function runCliWithEnv(extraEnv: NodeJS.ProcessEnv, ...args: string[]) {
   try {
     const command = `npm run ${args.map((arg) => `"${arg.replaceAll('"', '\\"')}"`).join(' ')}`;
     const result = await execAsync(command, {
@@ -15,6 +23,7 @@ async function runCli(...args: string[]) {
       env: {
         ...process.env,
         MIGRATION_DATABASE_URL: testUrls().migrator,
+        ...extraEnv,
       },
     });
     return { exitCode: 0, stdout: result.stdout, stderr: result.stderr };
@@ -38,10 +47,23 @@ describe('client administration output', () => {
     migrator = new pg.Client({ connectionString: testUrls().migrator });
     await migrator.connect();
     await migrator.query('DELETE FROM clients WHERE name = $1', ['gateway']);
+    await migrator.query('DELETE FROM clients WHERE id = $1', [PARALLEL_ID]);
+    await migrator.query(
+      `INSERT INTO clients (id, name, key_prefix, key_hash, scopes)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [
+        PARALLEL_ID,
+        PARALLEL_NAME,
+        PARALLEL_KEY.slice(0, 8),
+        createHash('sha256').update(PARALLEL_KEY).digest(),
+        ['ledger:read'],
+      ],
+    );
   });
 
   afterAll(async () => {
     await migrator.query('DELETE FROM clients WHERE name = $1', ['gateway']);
+    await migrator.query('DELETE FROM clients WHERE id = $1', [PARALLEL_ID]);
     await migrator.end();
   });
 
@@ -135,5 +157,50 @@ describe('client administration output', () => {
     expect(unknown.stderr).toBe('client not found: missing\n');
     expect(unknown.stderr).not.toMatch(/lk_[A-Za-z0-9_-]{43}/);
     expect(unknown.stderr).not.toMatch(/\b[a-f0-9]{64}\b/i);
+  });
+
+  it('reports unexpected connection errors without exposing the URL or password', async () => {
+    const databaseUrl = 'postgresql://admin:super-secret@127.0.0.1:1/ledger';
+    const result = await runCliWithEnv({ MIGRATION_DATABASE_URL: databaseUrl }, 'client:list');
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toMatch(/^unexpected error \(code: [A-Z0-9_]+\)\r?\n$/);
+    expect(result.stderr).not.toContain(databaseUrl);
+    expect(result.stderr).not.toContain('super-secret');
+  });
+
+  it('handles parallel revokes atomically and preserves revoked_at', async () => {
+    const results = await Promise.all([
+      runCli('client:revoke', '--', '--name', PARALLEL_NAME),
+      runCli('client:revoke', '--', '--name', PARALLEL_NAME),
+    ]);
+
+    expect(results.map((result) => result.exitCode).sort()).toEqual([0, 0]);
+    expect(results.map((result) => result.stdout).sort()).toEqual([
+      `client already revoked: ${PARALLEL_NAME}\n`,
+      `client revoked: ${PARALLEL_NAME}\n`,
+    ]);
+    expect(results.every((result) => result.stderr === '')).toBe(true);
+
+    const first = await migrator.query<{ revoked_at: Date }>(
+      'SELECT revoked_at FROM clients WHERE id = $1',
+      [PARALLEL_ID],
+    );
+    const firstRevokedAt = first.rows[0]?.revoked_at;
+    expect(firstRevokedAt).toBeInstanceOf(Date);
+
+    const repeated = await runCli('client:revoke', '--', '--name', PARALLEL_NAME);
+    expect(repeated).toEqual({
+      exitCode: 0,
+      stdout: `client already revoked: ${PARALLEL_NAME}\n`,
+      stderr: '',
+    });
+
+    const second = await migrator.query<{ revoked_at: Date }>(
+      'SELECT revoked_at FROM clients WHERE id = $1',
+      [PARALLEL_ID],
+    );
+    expect(second.rows[0]?.revoked_at).toEqual(firstRevokedAt);
   });
 });

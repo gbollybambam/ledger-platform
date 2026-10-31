@@ -112,4 +112,72 @@ describe('clients migration and least privilege', () => {
     expect(row.key_prefix).toBe(FIXTURE_KEY.slice(0, 8));
     expect(row.key_hash).toEqual(createHash('sha256').update(FIXTURE_KEY).digest());
   });
+
+  it('enforces client constraints in the database', async () => {
+    const duplicateNameId = '00000000-0000-0000-0000-000000000021';
+    const duplicateHashId = '00000000-0000-0000-0000-000000000022';
+    const duplicateHash = createHash('sha256').update('duplicate-hash-key').digest();
+    const validHash = createHash('sha256').update('valid-constraint-key').digest();
+    const insert = async (
+      id: string,
+      name: string,
+      hash: Buffer,
+      scopes: string[],
+      status = 'active',
+      revokedAt: Date | null = null,
+    ) =>
+      migrator.query(
+        `INSERT INTO clients
+           (id, name, key_prefix, key_hash, scopes, status, revoked_at)
+         VALUES ($1, $2, 'lk_test', $3, $4, $5, $6)`,
+        [id, name, hash, scopes, status, revokedAt],
+      );
+    const errorCode = async (promise: Promise<unknown>): Promise<string | undefined> => {
+      try {
+        await promise;
+        return undefined;
+      } catch (error) {
+        if (typeof error === 'object' && error !== null && 'code' in error) {
+          return typeof error.code === 'string' ? error.code : undefined;
+        }
+        return undefined;
+      }
+    };
+
+    expect(await errorCode(insert(duplicateNameId, 'empty-scopes', validHash, []))).toBe('23514');
+    expect(
+      await errorCode(insert(duplicateNameId, 'unknown-scope', validHash, ['ledger:nope'])),
+    ).toBe('23514');
+    expect(
+      await errorCode(
+        insert(
+          duplicateNameId,
+          'active-with-revocation',
+          validHash,
+          ['ledger:read'],
+          'active',
+          new Date(),
+        ),
+      ),
+    ).toBe('23514');
+    expect(
+      await errorCode(
+        insert(duplicateNameId, 'revoked-without-timestamp', validHash, ['ledger:read'], 'revoked'),
+      ),
+    ).toBe('23514');
+
+    await insert(duplicateNameId, 'constraint-base', validHash, ['ledger:read']);
+    expect(
+      await errorCode(insert(duplicateHashId, 'constraint-base', duplicateHash, ['ledger:read'])),
+    ).toBe('23505');
+    expect(
+      await errorCode(
+        insert('00000000-0000-0000-0000-000000000023', 'another-name', validHash, ['ledger:read']),
+      ),
+    ).toBe('23505');
+
+    await migrator.query('DELETE FROM clients WHERE id = ANY($1::uuid[])', [
+      [duplicateNameId, duplicateHashId, '00000000-0000-0000-0000-000000000023'],
+    ]);
+  });
 });

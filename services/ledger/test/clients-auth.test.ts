@@ -3,7 +3,6 @@ import { Writable } from 'node:stream';
 import type { FastifyInstance } from 'fastify';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { requireScope } from '../src/auth/require-scope.js';
 import { buildApp } from '../src/app.js';
 import { createTestPool, testUrls } from './helpers/db.js';
 
@@ -37,13 +36,9 @@ describe('F1 client authentication', () => {
       pool,
       logger: { level: 'debug', stream: logStream },
     });
-    app.get(
-      '/test-only/ledger-write',
-      { config: { access: 'ledger:write' }, preHandler: requireScope('ledger:write') },
-      () => ({
-        ok: true,
-      }),
-    );
+    app.get('/test-only/ledger-write', { config: { access: 'ledger:write' } }, () => ({
+      ok: true,
+    }));
     app.post('/test-only/body', { config: { access: 'any-client' } }, () => ({ ok: true }));
     app.get('/internal/status', { config: { access: 'any-client' } }, () => ({ ok: true }));
     await app.ready();
@@ -164,6 +159,43 @@ describe('F1 client authentication', () => {
     });
   });
 
+  it('rejects malformed and large unknown requests before parsing their bodies', async () => {
+    const malformed = await app.inject({
+      method: 'POST',
+      url: '/v1/does-not-exist',
+      headers: { 'content-type': 'application/json' },
+      payload: '{"broken"',
+    });
+    const large = await app.inject({
+      method: 'POST',
+      url: '/v1/does-not-exist',
+      headers: { 'content-type': 'application/json' },
+      payload: 'x'.repeat(1_000_000),
+    });
+
+    expect(malformed.statusCode).toBe(401);
+    expect(large.statusCode).toBe(401);
+    expect(malformed.headers['content-type']).toBe(large.headers['content-type']);
+    expect(malformed.headers['www-authenticate']).toBe('Bearer');
+    expect(large.headers['www-authenticate']).toBe('Bearer');
+    expect(malformed.json().error).toMatchObject({
+      code: 'unauthorized',
+      message: 'Unauthorized',
+    });
+    expect(large.json().error).toMatchObject({
+      code: 'unauthorized',
+      message: 'Unauthorized',
+    });
+  });
+
+  it('rejects public access on paths other than the health paths', async () => {
+    const candidate = buildApp({ pool });
+    expect(() =>
+      candidate.get('/test-only/public', { config: { access: 'public' } }, () => ({ ok: true })),
+    ).toThrow('public access is only allowed');
+    await candidate.close();
+  });
+
   it('registers the test-only scope route for authorization tests', () => {
     expect([...app.routeTable]).toContain('GET /test-only/ledger-write');
   });
@@ -241,13 +273,9 @@ describe('F1 authentication integration', () => {
       },
     });
     app = buildApp({ pool, logger: { level: 'debug', stream: logStream } });
-    app.get(
-      '/test-only/ledger-write',
-      { config: { access: 'ledger:write' }, preHandler: requireScope('ledger:write') },
-      () => ({
-        ok: true,
-      }),
-    );
+    app.get('/test-only/ledger-write', { config: { access: 'ledger:write' } }, () => ({
+      ok: true,
+    }));
     await app.ready();
   });
 
