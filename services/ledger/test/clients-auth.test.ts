@@ -178,11 +178,11 @@ describe('F1 client authentication', () => {
     expect(malformed.headers['content-type']).toBe(large.headers['content-type']);
     expect(malformed.headers['www-authenticate']).toBe('Bearer');
     expect(large.headers['www-authenticate']).toBe('Bearer');
-    expect(malformed.json().error).toMatchObject({
+    expect(malformed.json<{ error: { code: string; message: string } }>().error).toMatchObject({
       code: 'unauthorized',
       message: 'Unauthorized',
     });
-    expect(large.json().error).toMatchObject({
+    expect(large.json<{ error: { code: string; message: string } }>().error).toMatchObject({
       code: 'unauthorized',
       message: 'Unauthorized',
     });

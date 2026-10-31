@@ -74,7 +74,11 @@ function printError(writers: OutputWriters, error: unknown): number {
     return 1;
   }
 
-  writers.stderr('unexpected error\n');
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
+      ? error.code
+      : 'unknown';
+  writers.stderr(`unexpected error (code: ${code})\n`);
   return 2;
 }
 
@@ -85,7 +89,15 @@ async function createClient(args: readonly string[], writers: OutputWriters, dat
   const id = randomUUID();
 
   const client = new pg.Client({ connectionString: databaseUrl });
-  await client.connect();
+  let connectionError: unknown;
+  client.on('error', (error) => {
+    connectionError = error;
+  });
+  try {
+    await client.connect();
+  } catch (error) {
+    throw connectionError ?? error;
+  }
   try {
     const existing = await client.query('SELECT 1 FROM clients WHERE name = $1', [name]);
     if (existing.rowCount !== 0) {
@@ -146,7 +158,15 @@ function formatClients(rows: ClientRow[], stdout: (text: string) => void): void 
 
 async function listClients(writers: OutputWriters, databaseUrl: string): Promise<void> {
   const client = new pg.Client({ connectionString: databaseUrl });
-  await client.connect();
+  let connectionError: unknown;
+  client.on('error', (error) => {
+    connectionError = error;
+  });
+  try {
+    await client.connect();
+  } catch (error) {
+    throw connectionError ?? error;
+  }
   try {
     const result = await client.query<ClientRow>(
       `SELECT id, name, key_prefix, scopes, status, created_at
@@ -162,27 +182,39 @@ async function listClients(writers: OutputWriters, databaseUrl: string): Promise
 async function revokeClient(args: readonly string[], writers: OutputWriters, databaseUrl: string) {
   const name = validateName(parseOption(args, '--name'));
   const client = new pg.Client({ connectionString: databaseUrl });
-  await client.connect();
+  let connectionError: unknown;
+  client.on('error', (error) => {
+    connectionError = error;
+  });
   try {
-    const result = await client.query<{ status: 'active' | 'revoked' }>(
+    await client.connect();
+  } catch (error) {
+    throw connectionError ?? error;
+  }
+  try {
+    const result = await client.query<{ id: string }>(
+      `UPDATE clients
+          SET status = 'revoked', revoked_at = now()
+        WHERE name = $1 AND status = 'active'
+      RETURNING id`,
+      [name],
+    );
+    if (result.rowCount !== 0) {
+      writers.stdout(`client revoked: ${name}\n`);
+      return 0;
+    }
+
+    const existing = await client.query<{ status: 'active' | 'revoked' }>(
       `SELECT status FROM clients WHERE name = $1`,
       [name],
     );
-    const row = result.rows[0];
-    if (row === undefined) {
-      writers.stderr(`client not found: ${name}\n`);
-      return 1;
-    }
-    if (row.status === 'revoked') {
+    const row = existing.rows[0];
+    if (row?.status === 'revoked') {
       writers.stdout(`client already revoked: ${name}\n`);
       return 0;
     }
-    await client.query(
-      `UPDATE clients SET status = 'revoked', revoked_at = now() WHERE name = $1`,
-      [name],
-    );
-    writers.stdout(`client revoked: ${name}\n`);
-    return 0;
+    writers.stderr(`client not found: ${name}\n`);
+    return 1;
   } finally {
     await client.end();
   }

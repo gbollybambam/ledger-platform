@@ -1,7 +1,8 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
+import { hasAccess, isPublicRequest } from './access.js';
 import { hashApiKey } from './keys.js';
-import type { Access, Scope } from './types.js';
+import type { Scope } from './types.js';
 import { ApiError } from '../http/errors.js';
 
 function bearerKey(request: FastifyRequest): string {
@@ -42,56 +43,15 @@ async function authenticate(request: FastifyRequest, pool: Pool): Promise<void> 
   };
 }
 
-function isExactPublicHealthRequest(request: FastifyRequest): boolean {
-  const access = request.routeOptions.config.access;
-  return (
-    access === 'public' &&
-    (request.method === 'GET' || request.method === 'HEAD') &&
-    (request.raw.url === '/health' || request.raw.url === '/health/ready')
-  );
-}
-
-async function authenticateForAccess(
-  request: FastifyRequest,
-  pool: Pool,
-  access: Access | undefined,
-): Promise<void> {
-  if (access === undefined || access === 'public') {
-    if (access === 'public' && isExactPublicHealthRequest(request)) {
-      return;
-    }
-    if (access === 'public') {
-      await authenticate(request, pool);
-      return;
-    }
-  } else {
-    await authenticate(request, pool);
-  }
-
-  if (access === 'ledger:read' || access === 'ledger:write') {
-    if (!request.client?.scopes.includes(access)) {
-      throw new ApiError(403, 'forbidden', 'Forbidden');
-    }
-  }
-}
-
-export async function authenticateUnknownRequest(
-  request: FastifyRequest,
-  pool: Pool,
-): Promise<void> {
-  await authenticate(request, pool);
-}
-
 export function registerAuthentication(app: FastifyInstance, pool: Pool): void {
   app.addHook('onRequest', async (request) => {
-    const access = request.routeOptions.config.access;
-    await authenticateForAccess(request, pool, access);
-  });
+    if (isPublicRequest(request)) {
+      return;
+    }
 
-  app.setNotFoundHandler(async (request, reply: FastifyReply) => {
-    await authenticateUnknownRequest(request, pool);
-    return reply.status(404).send({
-      error: { code: 'not_found', message: 'Route not found', request_id: request.id },
-    });
+    await authenticate(request, pool);
+    if (!hasAccess(request)) {
+      throw new ApiError(403, 'forbidden', 'Forbidden');
+    }
   });
 }

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import type { Pool } from 'pg';
+import { PUBLIC_PATHS } from './auth/access.js';
 import { registerAuthentication } from './auth/authenticate.js';
 import { registerErrorHandling } from './http/errors.js';
 import { registerHealthRoutes } from './http/health.js';
@@ -52,6 +53,12 @@ export function buildApp({ pool, logger = false }: AppDeps): FastifyInstance {
   app.addHook('onRoute', (route) => {
     if (route.config?.access === undefined) {
       throw new Error(`Route ${String(route.method)} ${route.url} must declare access`);
+    }
+    if (
+      route.config.access === 'public' &&
+      (!PUBLIC_PATHS.has(route.url) || !['GET', 'HEAD'].includes(String(route.method)))
+    ) {
+      throw new Error(`public access is only allowed on GET and HEAD health paths: ${route.url}`);
     }
     for (const method of [route.method].flat()) {
       if (!IGNORED_METHODS.has(method)) {

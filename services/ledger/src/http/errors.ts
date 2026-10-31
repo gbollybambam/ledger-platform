@@ -17,6 +17,10 @@ export class ApiError extends Error {
 }
 
 export function registerErrorHandling(app: FastifyInstance): void {
+  app.setNotFoundHandler((request, reply) => {
+    return reply.status(404).send(errorBody('not_found', 'Route not found', request.id));
+  });
+
   app.setErrorHandler((error: FastifyError, request, reply) => {
     if (error instanceof ApiError) {
       if (error.statusCode === 401) {
