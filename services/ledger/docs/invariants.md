@@ -26,7 +26,7 @@ How to read this file: a rule is only real if something fails when it is broken.
 
 | ID | Rule | What fails if it is broken |
 | -- | ---- | -------------------------- |
-| INV-11 | Every route except `/health` and `/health/ready` needs a valid client key with the right scope. Keys are stored only as hashes. | Tests for missing, wrong, revoked, and under-scoped keys. A test that reads the database for the plaintext key and finds none. |
+| INV-11 | Every request needs a valid client key with the right scope, except `GET` and `HEAD` on `/health` and `/health/ready`. This includes paths that do not exist: without a key they return 401, and with a key they return 404. Every route declares its access, and a route without one stops the service from starting. Keys are stored only as hashes. | Tests for missing, wrong, revoked, and under-scoped keys. A test that calls every registered route without a key and expects 401. A test that an undeclared route makes the app refuse to start. The plaintext-key test. |
 | INV-12 | Every account and every transaction records the client that created it. | `NOT NULL` foreign keys. Tests check the value. |
 | INV-13 | `(client, external_ref)` is unique. A repeat is rejected and creates nothing. | A unique constraint. A test posts the same reference twice. |
 | INV-14 | Secrets never appear in logs, error bodies, or responses. This covers API keys and the `Authorization` header. | A test captures the logs of a failed and a successful request, and searches for the key. |
