@@ -7,6 +7,11 @@ const PERMISSION_DENIED = '42501';
 const FIXTURE_ID = '00000000-0000-0000-0000-000000000020';
 const FIXTURE_NAME = 'migration-test';
 const FIXTURE_KEY = `lk_${'M'.repeat(43)}`;
+const CONSTRAINT_IDS = [
+  '00000000-0000-0000-0000-000000000021',
+  '00000000-0000-0000-0000-000000000022',
+  '00000000-0000-0000-0000-000000000023',
+];
 
 async function sqlState(promise: Promise<unknown>): Promise<string | undefined> {
   try {
@@ -30,6 +35,7 @@ describe('clients migration and least privilege', () => {
     migrator = new pg.Client({ connectionString: testUrls().migrator });
     await migrator.connect();
     await migrator.query('DELETE FROM clients WHERE id = $1', [FIXTURE_ID]);
+    await migrator.query('DELETE FROM clients WHERE id = ANY($1::uuid[])', [CONSTRAINT_IDS]);
     await migrator.query(
       `INSERT INTO clients
          (id, name, key_prefix, key_hash, scopes)

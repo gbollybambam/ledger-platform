@@ -3,7 +3,7 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 import type { Pool } from 'pg';
 import { PUBLIC_PATHS } from './auth/access.js';
 import { registerAuthentication } from './auth/authenticate.js';
-import { registerErrorHandling } from './http/errors.js';
+import { errorBody, registerErrorHandling } from './http/errors.js';
 import { registerHealthRoutes } from './http/health.js';
 import { registerWhoamiRoute } from './http/whoami.js';
 
@@ -38,11 +38,26 @@ export function buildApp({ pool, logger = false }: AppDeps): FastifyInstance {
       logger === false
         ? false
         : logger === true
-          ? { redact: ['req.headers.authorization'] }
+          ? {
+              redact: {
+                paths: ['req.headers.authorization'],
+                censor: '[Redact]',
+              },
+            }
           : {
               ...logger,
-              redact: ['req.headers.authorization'],
+              redact: {
+                paths: ['req.headers.authorization'],
+                censor: '[Redact]',
+              },
             },
+    frameworkErrors: (_error, _request, reply) => {
+      const requestId = randomUUID();
+      reply.raw.statusCode = 401;
+      reply.raw.setHeader('content-type', 'application/json; charset=utf-8');
+      reply.raw.setHeader('www-authenticate', 'Bearer');
+      reply.raw.end(JSON.stringify(errorBody('unauthorized', 'Unauthorized', requestId)));
+    },
     // Always make our own request ID. Never trust one sent by a client.
     requestIdHeader: false,
     genReqId: () => randomUUID(),

@@ -31,7 +31,9 @@ describe('F1 client authentication', () => {
     pool = createTestPool();
     migrator = new pg.Client({ connectionString: testUrls().migrator });
     await migrator.connect();
-    await migrator.query('DELETE FROM clients WHERE id = $1', [CLIENT_ID]);
+    await migrator.query('DELETE FROM clients WHERE id = ANY($1::uuid[])', [
+      [CLIENT_ID, READ_CLIENT_ID, WRITE_CLIENT_ID],
+    ]);
     logStream = new Writable({
       write(chunk: unknown, _encoding: BufferEncoding, callback: (error?: Error | null) => void) {
         logs += typeof chunk === 'string' ? chunk : String(chunk);
@@ -274,7 +276,9 @@ describe('F1 authentication integration', () => {
     pool = createTestPool();
     migrator = new pg.Client({ connectionString: testUrls().migrator });
     await migrator.connect();
-    await migrator.query('DELETE FROM clients WHERE id = $1', [CLIENT_ID]);
+    await migrator.query('DELETE FROM clients WHERE id = ANY($1::uuid[])', [
+      [CLIENT_ID, READ_CLIENT_ID, WRITE_CLIENT_ID],
+    ]);
     await migrator.query(
       `INSERT INTO clients
          (id, name, key_prefix, key_hash, scopes)

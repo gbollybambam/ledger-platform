@@ -43,6 +43,10 @@ async function runCliWithEnv(extraEnv: NodeJS.ProcessEnv, ...args: string[]) {
 describe('client administration output', () => {
   let migrator: pg.Client;
 
+  async function deleteClient(name: string): Promise<void> {
+    await migrator.query('DELETE FROM clients WHERE name = $1', [name]);
+  }
+
   beforeAll(async () => {
     migrator = new pg.Client({ connectionString: testUrls().migrator });
     await migrator.connect();
@@ -68,95 +72,123 @@ describe('client administration output', () => {
   });
 
   it('client:create prints the exact fields and exposes the key exactly once', async () => {
-    const result = await runCli(
-      'client:create',
-      '--',
-      '--name',
-      'gateway',
-      '--scopes',
-      'ledger:write,ledger:read',
-    );
+    try {
+      const result = await runCli(
+        'client:create',
+        '--',
+        '--name',
+        'gateway',
+        '--scopes',
+        'ledger:write,ledger:read',
+      );
 
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toMatch(
-      /^client created\r?\nid:[ ]{6}[0-9a-f-]{36}\r?\nname:[ ]{4}gateway\r?\nscopes:[ ]{2}ledger:read,ledger:write\r?\nprefix:[ ]{2}lk_[A-Za-z0-9_-]{5}\r?\napi_key: lk_[A-Za-z0-9_-]{43}\r?\n$/,
-    );
-    expect(result.stderr).toBe('Save this key now. It cannot be shown again.\n');
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toMatch(
+        /^client created\r?\nid:[ ]{6}[0-9a-f-]{36}\r?\nname:[ ]{4}gateway\r?\nscopes:[ ]{2}ledger:read,ledger:write\r?\nprefix:[ ]{2}lk_[A-Za-z0-9_-]{5}\r?\napi_key: lk_[A-Za-z0-9_-]{43}\r?\n$/,
+      );
+      expect(result.stderr).toBe('Save this key now. It cannot be shown again.\n');
 
-    const key = result.stdout.match(/^api_key: (lk_[A-Za-z0-9_-]{43})$/m)?.[1];
-    expect(key).toBeDefined();
-    expect(result.stdout.match(new RegExp(key!, 'g'))).toHaveLength(1);
-    expect(result.stderr).not.toContain(key!);
+      const key = result.stdout.match(/^api_key: (lk_[A-Za-z0-9_-]{43})$/m)?.[1];
+      expect(key).toBeDefined();
+      expect(result.stdout.match(new RegExp(key!, 'g'))).toHaveLength(1);
+      expect(result.stderr).not.toContain(key!);
+    } finally {
+      await deleteClient('gateway');
+    }
   }, 60_000);
 
   it('rejects invalid names, unknown scopes, and duplicate names with exit code 1', async () => {
-    const invalidName = await runCli(
-      'client:create',
-      '--',
-      '--name',
-      'Bad_Name',
-      '--scopes',
-      'ledger:read',
-    );
-    expect(invalidName.exitCode).toBe(1);
-    expect(invalidName.stderr).toContain('invalid');
+    try {
+      const invalidName = await runCli(
+        'client:create',
+        '--',
+        '--name',
+        'Bad_Name',
+        '--scopes',
+        'ledger:read',
+      );
+      expect(invalidName.exitCode).toBe(1);
+      expect(invalidName.stderr).toContain('invalid');
 
-    const unknownScope = await runCli(
-      'client:create',
-      '--',
-      '--name',
-      'gateway',
-      '--scopes',
-      'ledger:nope',
-    );
-    expect(unknownScope.exitCode).toBe(1);
-    expect(unknownScope.stderr).toContain('ledger:nope');
-    expect(unknownScope.stderr).toContain('ledger:read');
-    expect(unknownScope.stderr).toContain('ledger:write');
+      const unknownScope = await runCli(
+        'client:create',
+        '--',
+        '--name',
+        'gateway',
+        '--scopes',
+        'ledger:nope',
+      );
+      expect(unknownScope.exitCode).toBe(1);
+      expect(unknownScope.stderr).toContain('ledger:nope');
+      expect(unknownScope.stderr).toContain('ledger:read');
+      expect(unknownScope.stderr).toContain('ledger:write');
 
-    const duplicate = await runCli(
-      'client:create',
-      '--',
-      '--name',
-      'gateway',
-      '--scopes',
-      'ledger:read',
-    );
-    expect(duplicate.exitCode).toBe(1);
-    expect(duplicate.stderr).toBe('a client named "gateway" already exists\n');
+      const created = await runCli(
+        'client:create',
+        '--',
+        '--name',
+        'gateway',
+        '--scopes',
+        'ledger:read',
+      );
+      expect(created.exitCode).toBe(0);
+
+      const duplicate = await runCli(
+        'client:create',
+        '--',
+        '--name',
+        'gateway',
+        '--scopes',
+        'ledger:read',
+      );
+      expect(duplicate.exitCode).toBe(1);
+      expect(duplicate.stderr).toBe('a client named "gateway" already exists\n');
+    } finally {
+      await deleteClient('gateway');
+    }
   }, 60_000);
 
   it('lists clients with padded columns and never prints a key or hash', async () => {
-    const result = await runCli('client:list');
+    try {
+      await runCli('client:create', '--', '--name', 'gateway', '--scopes', 'ledger:read');
+      const result = await runCli('client:list');
 
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('NAME  ID  PREFIX  SCOPES  STATUS  CREATED');
-    expect(result.stdout).toContain('gateway');
-    expect(result.stdout).not.toMatch(/lk_[A-Za-z0-9_-]{43}/);
-    expect(result.stdout).not.toMatch(/\b[a-f0-9]{64}\b/i);
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('NAME  ID  PREFIX  SCOPES  STATUS  CREATED');
+      expect(result.stdout).toContain('gateway');
+      expect(result.stdout).not.toMatch(/lk_[A-Za-z0-9_-]{43}/);
+      expect(result.stdout).not.toMatch(/\b[a-f0-9]{64}\b/i);
+    } finally {
+      await deleteClient('gateway');
+    }
   }, 60_000);
 
   it('revokes a client, is idempotent, and reports unknown names on stderr', async () => {
-    const first = await runCli('client:revoke', '--', '--name', 'gateway');
-    expect(first).toEqual({
-      exitCode: 0,
-      stdout: 'client revoked: gateway\n',
-      stderr: '',
-    });
+    try {
+      await runCli('client:create', '--', '--name', 'gateway', '--scopes', 'ledger:read');
+      const first = await runCli('client:revoke', '--', '--name', 'gateway');
+      expect(first).toEqual({
+        exitCode: 0,
+        stdout: 'client revoked: gateway\n',
+        stderr: '',
+      });
 
-    const second = await runCli('client:revoke', '--', '--name', 'gateway');
-    expect(second).toEqual({
-      exitCode: 0,
-      stdout: 'client already revoked: gateway\n',
-      stderr: '',
-    });
+      const second = await runCli('client:revoke', '--', '--name', 'gateway');
+      expect(second).toEqual({
+        exitCode: 0,
+        stdout: 'client already revoked: gateway\n',
+        stderr: '',
+      });
 
-    const unknown = await runCli('client:revoke', '--', '--name', 'missing');
-    expect(unknown.exitCode).toBe(1);
-    expect(unknown.stdout).toBe('');
-    expect(unknown.stderr).toBe('client not found: missing\n');
-    expect(unknown.stderr).not.toMatch(/lk_[A-Za-z0-9_-]{43}/);
-    expect(unknown.stderr).not.toMatch(/\b[a-f0-9]{64}\b/i);
+      const unknown = await runCli('client:revoke', '--', '--name', 'missing');
+      expect(unknown.exitCode).toBe(1);
+      expect(unknown.stdout).toBe('');
+      expect(unknown.stderr).toBe('client not found: missing\n');
+      expect(unknown.stderr).not.toMatch(/lk_[A-Za-z0-9_-]{43}/);
+      expect(unknown.stderr).not.toMatch(/\b[a-f0-9]{64}\b/i);
+    } finally {
+      await deleteClient('gateway');
+    }
   }, 60_000);
 
   it('reports unexpected connection errors without exposing the URL or password', async () => {
@@ -171,36 +203,40 @@ describe('client administration output', () => {
   }, 60_000);
 
   it('handles parallel revokes atomically and preserves revoked_at', async () => {
-    const results = await Promise.all([
-      runCli('client:revoke', '--', '--name', PARALLEL_NAME),
-      runCli('client:revoke', '--', '--name', PARALLEL_NAME),
-    ]);
+    try {
+      const results = await Promise.all([
+        runCli('client:revoke', '--', '--name', PARALLEL_NAME),
+        runCli('client:revoke', '--', '--name', PARALLEL_NAME),
+      ]);
 
-    expect(results.map((result) => result.exitCode).sort()).toEqual([0, 0]);
-    expect(results.map((result) => result.stdout).sort()).toEqual([
-      `client already revoked: ${PARALLEL_NAME}\n`,
-      `client revoked: ${PARALLEL_NAME}\n`,
-    ]);
-    expect(results.every((result) => result.stderr === '')).toBe(true);
+      expect(results.map((result) => result.exitCode).sort()).toEqual([0, 0]);
+      expect(results.map((result) => result.stdout).sort()).toEqual([
+        `client already revoked: ${PARALLEL_NAME}\n`,
+        `client revoked: ${PARALLEL_NAME}\n`,
+      ]);
+      expect(results.every((result) => result.stderr === '')).toBe(true);
 
-    const first = await migrator.query<{ revoked_at: Date }>(
-      'SELECT revoked_at FROM clients WHERE id = $1',
-      [PARALLEL_ID],
-    );
-    const firstRevokedAt = first.rows[0]?.revoked_at;
-    expect(firstRevokedAt).toBeInstanceOf(Date);
+      const first = await migrator.query<{ revoked_at: Date }>(
+        'SELECT revoked_at FROM clients WHERE id = $1',
+        [PARALLEL_ID],
+      );
+      const firstRevokedAt = first.rows[0]?.revoked_at;
+      expect(firstRevokedAt).toBeInstanceOf(Date);
 
-    const repeated = await runCli('client:revoke', '--', '--name', PARALLEL_NAME);
-    expect(repeated).toEqual({
-      exitCode: 0,
-      stdout: `client already revoked: ${PARALLEL_NAME}\n`,
-      stderr: '',
-    });
+      const repeated = await runCli('client:revoke', '--', '--name', PARALLEL_NAME);
+      expect(repeated).toEqual({
+        exitCode: 0,
+        stdout: `client already revoked: ${PARALLEL_NAME}\n`,
+        stderr: '',
+      });
 
-    const second = await migrator.query<{ revoked_at: Date }>(
-      'SELECT revoked_at FROM clients WHERE id = $1',
-      [PARALLEL_ID],
-    );
-    expect(second.rows[0]?.revoked_at).toEqual(firstRevokedAt);
+      const second = await migrator.query<{ revoked_at: Date }>(
+        'SELECT revoked_at FROM clients WHERE id = $1',
+        [PARALLEL_ID],
+      );
+      expect(second.rows[0]?.revoked_at).toEqual(firstRevokedAt);
+    } finally {
+      await deleteClient(PARALLEL_NAME);
+    }
   }, 60_000);
 });
