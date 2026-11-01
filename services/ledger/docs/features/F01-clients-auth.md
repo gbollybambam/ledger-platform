@@ -143,7 +143,5 @@ Complex parts (CLI execution with extra oversight / Claude escalation if blocked
 - **Hook order.** Authentication must run before body parsing and before any route handler.
 
 Review log:
-- Pass 1: findings, fixed, moved to backlog
-- Pass 2: findings, fixed, moved to backlog
-- Planner review (complex parts): 6 fix-now, 6 backlog. Main finding: the hook failed open for unknown paths.
-- Planner review of complex parts: 7 fix-now (all fixed), then 6 more fix-now from the full-diff review. Main finding: the hook failed open for unknown paths.
+- Pass 1 (CLI): default deny, test gaps. Planner review: 13 fix-now, all fixed.
+- Pass 2 (CLI): 3 fix-now (standard 503 body, request ID on framework errors, stale spec text), all fixed. 9 items in the backlog.
