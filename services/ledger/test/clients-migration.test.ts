@@ -166,18 +166,22 @@ describe('clients migration and least privilege', () => {
       ),
     ).toBe('23514');
 
-    await insert(duplicateNameId, 'constraint-base', validHash, ['ledger:read']);
-    expect(
-      await errorCode(insert(duplicateHashId, 'constraint-base', duplicateHash, ['ledger:read'])),
-    ).toBe('23505');
-    expect(
-      await errorCode(
-        insert('00000000-0000-0000-0000-000000000023', 'another-name', validHash, ['ledger:read']),
-      ),
-    ).toBe('23505');
-
-    await migrator.query('DELETE FROM clients WHERE id = ANY($1::uuid[])', [
-      [duplicateNameId, duplicateHashId, '00000000-0000-0000-0000-000000000023'],
-    ]);
+    try {
+      await insert(duplicateNameId, 'constraint-base', validHash, ['ledger:read']);
+      expect(
+        await errorCode(insert(duplicateHashId, 'constraint-base', duplicateHash, ['ledger:read'])),
+      ).toBe('23505');
+      expect(
+        await errorCode(
+          insert('00000000-0000-0000-0000-000000000023', 'another-name', validHash, [
+            'ledger:read',
+          ]),
+        ),
+      ).toBe('23505');
+    } finally {
+      await migrator.query('DELETE FROM clients WHERE id = ANY($1::uuid[])', [
+        [duplicateNameId, duplicateHashId, '00000000-0000-0000-0000-000000000023'],
+      ]);
+    }
   });
 });

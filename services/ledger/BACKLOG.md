@@ -16,6 +16,9 @@ Format: `- [feature] what -- why it can wait -- date`
 - [F1] Move the `import type` lines in `app.ts` to the top -- style cleanup only -- 2026-10-31
 - [F1] Return 503, not 500, if the database is down during authentication -- make database availability explicit in the API contract -- 2026-10-31
 - [F1] Include the per-request authentication query in the F9 benchmark -- every authenticated request costs one database query -- 2026-10-31
+- [F1] Run most client-admin cases in-process with injected writers, keeping one or two real npm smoke tests -- reduce subprocess cost while preserving CLI coverage -- 2026-11-01
+- [F1] Prevent `client.end()` in `finally` from hiding an original error -- preserve the first failure during cleanup -- 2026-11-01
+- [F1] Document that health probes with a query string receive 401 -- make the exact public health URL contract clear in the runbook -- 2026-11-01
 
 ## Later ideas
 

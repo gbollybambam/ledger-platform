@@ -17,7 +17,7 @@ async function runCli(...args: string[]) {
 
 async function runCliWithEnv(extraEnv: NodeJS.ProcessEnv, ...args: string[]) {
   try {
-    const command = `npm run ${args.map((arg) => `"${arg.replaceAll('"', '\\"')}"`).join(' ')}`;
+    const command = `npm run --silent ${args.map((arg) => `"${arg.replaceAll('"', '\\"')}"`).join(' ')}`;
     const result = await execAsync(command, {
       cwd,
       env: {
