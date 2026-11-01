@@ -54,6 +54,7 @@ export function buildApp({ pool, logger = false }: AppDeps): FastifyInstance {
     frameworkErrors: (_error, _request, reply) => {
       const requestId = randomUUID();
       reply.raw.statusCode = 401;
+      reply.raw.setHeader('x-request-id', requestId);
       reply.raw.setHeader('content-type', 'application/json; charset=utf-8');
       reply.raw.setHeader('www-authenticate', 'Bearer');
       reply.raw.end(JSON.stringify(errorBody('unauthorized', 'Unauthorized', requestId)));

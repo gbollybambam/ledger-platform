@@ -73,15 +73,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [status, db]
-                properties:
-                  status:
-                    type: string
-                    enum: [unavailable]
-                  db:
-                    type: string
-                    enum: [down]
+                $ref: '#/components/schemas/Error'
   /v1/whoami:
     get:
       tags: [Identity]

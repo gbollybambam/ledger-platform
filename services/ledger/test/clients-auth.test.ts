@@ -202,7 +202,9 @@ describe('F1 client authentication', () => {
       const response = await app.inject({ method: 'GET', url });
       expect(response.statusCode, url).toBe(401);
       expect(response.headers['www-authenticate'], url).toBe('Bearer');
-      expect(response.json(), url).toMatchObject({
+      const body = response.json<{ error: { request_id: string } }>();
+      expect(response.headers['x-request-id'], url).toBe(body.error.request_id);
+      expect(body, url).toMatchObject({
         error: { code: 'unauthorized', message: 'Unauthorized' },
       });
       expect(response.body, url).not.toContain(url);

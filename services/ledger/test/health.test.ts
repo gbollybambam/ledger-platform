@@ -55,7 +55,14 @@ describe('readiness when the database is down', () => {
     try {
       const res = await app.inject({ method: 'GET', url: '/health/ready' });
       expect(res.statusCode).toBe(503);
-      expect(res.json()).toEqual({ status: 'unavailable', db: 'down' });
+      expect(res.headers['x-request-id']).toMatch(/^[0-9a-f-]{36}$/);
+      expect(res.json()).toEqual({
+        error: {
+          code: 'service_unavailable',
+          message: 'Service unavailable',
+          request_id: res.headers['x-request-id'],
+        },
+      });
     } finally {
       await app.close();
       await deadPool.end();

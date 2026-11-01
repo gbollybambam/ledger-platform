@@ -21,7 +21,7 @@ Reads first (in this order):
 
 Expected changes:
 - `migrations/<timestamp>_create-clients.sql`: the `clients` table exactly as in RFC-001. Then `GRANT SELECT ON clients TO ledger_app;`. Nothing else. Create it with `npm run migrate:create -- create-clients`.
-- `src/auth/`: key generation, hashing, an auth hook, and `requireScope`.
+- `src/auth/`: key generation, hashing, an auth hook, route access metadata, and scope checks.
 - `src/http/whoami.ts`: `GET /v1/whoami`.
 - `scripts/lib/client-admin.ts` with injectable output writers, a thin
   `scripts/client-admin.ts` wrapper, and these npm scripts: `client:create`,
@@ -127,7 +127,7 @@ Done when:
 - [ ] `GET /v1/whoami` with a valid key returns 200 and `{ "client_id", "name", "scopes" }`
 - [ ] A missing header, a wrong scheme, an unknown key, and a revoked key all return 401 `unauthorized` with an identical body shape and message. The body does not say which case it was
 - [ ] Revoking a client takes effect on the very next request (no caching). A test revokes a client and calls again
-- [ ] `requireScope('ledger:read' | 'ledger:write')` can be used on a route. A test registers a test-only route and shows 403 `forbidden` when the scope is missing. That test route is not shipped
+- [ ] Every non-public route declares `access: 'any-client' | 'ledger:read' | 'ledger:write'`. A test-only route with each ledger scope returns 200 for the matching scope and 403 `forbidden` for the other scope. Test routes are not shipped
 - [ ] `/health` and `/health/ready` stay public
 - [ ] Authentication runs before the body is parsed (an `onRequest`-level hook), and every error uses the standard error body with a `request_id`
 - [ ] The `Authorization` header and the key never appear in logs. A test captures the logs of a successful and a failed request and searches for the key (INV-14)
