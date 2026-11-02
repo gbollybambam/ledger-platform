@@ -5,6 +5,9 @@ The versions follow Semantic Versioning. Tags look like `ledger/v0.1.0`. See `..
 
 ## [Unreleased]
 
+### Added
+- F1 client administration, hashed API-key authentication, scopes, and `/v1/whoami`.
+
 ## [0.1.0] - 2026-10-30
 
 ### Added

@@ -29,3 +29,7 @@ It gives per-service identity, least privilege (the recon service gets read-only
 ## Trade-offs and risks
 
 Keys must be stored well by clients and rotated. Rate limiting for failed attempts, an audit log, and mTLS are planned (see `docs/versions.md`). Until then, a TLS-only network path and strong keys are required (see `docs/production-readiness.md`).
+
+## Addendum (2026-11-01): scopes are exact
+
+Scopes do not imply each other. `ledger:write` does not include `ledger:read`. Each route declares exactly one scope, or `any-client`. A client that must write and read is created with both scopes. Reason: least privilege, and rules that are simple to test. Revisit if a third scope is added.
