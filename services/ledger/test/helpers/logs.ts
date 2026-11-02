@@ -18,8 +18,10 @@ export function captureLogs(): CapturedLogs {
   return {
     stream,
     text: () => text,
-    lines: () => {
-      throw new Error('not implemented');
-    },
+    lines: () =>
+      text
+        .split(/\r?\n/)
+        .filter((line) => line.length > 0)
+        .map((line) => JSON.parse(line) as unknown),
   };
 }

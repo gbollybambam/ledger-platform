@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
+import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildTestApp } from './helpers/app.js';
 import { closeTestDb, createTestClient, withTestClient } from './helpers/clients.js';
-import { createTestPool } from './helpers/db.js';
+import { createTestPool, testUrls } from './helpers/db.js';
 import { expectErrorBody, expectIdentical401 } from './helpers/http.js';
 import { captureLogs } from './helpers/logs.js';
 
@@ -22,7 +23,7 @@ afterAll(async () => {
 });
 
 describe('shared test helpers', () => {
-  beforeAll(async () => {
+  beforeAll(() => {
     pool = createTestPool();
   });
 
@@ -45,9 +46,7 @@ describe('shared test helpers', () => {
     const name = `throw-${randomUUID()}`;
 
     await expect(
-      withTestClient({ name }, async () => {
-        throw new Error('callback failed');
-      }),
+      withTestClient({ name }, () => Promise.reject(new Error('callback failed'))),
     ).rejects.toThrow('callback failed');
 
     const result = await pool.query<{ count: string }>(
@@ -81,10 +80,7 @@ describe('shared test helpers', () => {
         },
       },
     ],
-    [
-      'missing request_id',
-      { error: { code: 'invalid_request', message: 'Invalid request' } },
-    ],
+    ['missing request_id', { error: { code: 'invalid_request', message: 'Invalid request' } }],
     [
       'request_id differs from header',
       {
@@ -169,9 +165,7 @@ describe('shared test helpers', () => {
 
   it('leaves no test clients behind', async () => {
     const names = Array.from({ length: 5 }, () => `cleanup-${randomUUID()}`);
-    const clients = await Promise.all(
-      names.map((name) => createTestClient({ name })),
-    );
+    const clients = await Promise.all(names.map((name) => createTestClient({ name })));
 
     await Promise.all(clients.map((client) => client.remove()));
 
@@ -335,8 +329,9 @@ describe('shared test helpers', () => {
     const name = `assertion-${randomUUID()}`;
 
     await expect(
-      withTestClient({ name }, async () => {
+      withTestClient({ name }, () => {
         expect('actual').toBe('expected');
+        return Promise.resolve();
       }),
     ).rejects.toThrow();
 
@@ -371,20 +366,23 @@ describe('shared test helpers', () => {
   it('builds an app with extra routes before ready', async () => {
     const testApp = await buildTestApp({
       routes: (app: FastifyInstance) => {
-        app.get('/test-only/helper-route', { config: { access: 'public' } }, () => ({
+        app.get('/test-only/helper-route', { config: { access: 'any-client' } }, () => ({
           ok: true,
         }));
       },
     });
+    const client = await createTestClient();
 
     try {
       const response = await testApp.app.inject({
         method: 'GET',
         url: '/test-only/helper-route',
+        headers: { authorization: client.authorization },
       });
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual({ ok: true });
     } finally {
+      await client.remove();
       await testApp.close();
     }
   });
@@ -406,6 +404,7 @@ describe('shared test helpers', () => {
 
   it('closeTestDb closes the named shared migrator connection', async () => {
     const client = await createTestClient({ name: `application-name-${randomUUID()}` });
+    const cleanup = new pg.Client({ connectionString: testUrls().migrator });
 
     try {
       const before = await pool.query<{ count: string }>(
@@ -424,7 +423,9 @@ describe('shared test helpers', () => {
       );
       expect(after.rows[0]?.count).toBe('0');
     } finally {
-      await client.remove();
+      await cleanup.connect();
+      await cleanup.query('DELETE FROM clients WHERE id = $1', [client.id]);
+      await cleanup.end();
     }
   });
 });
