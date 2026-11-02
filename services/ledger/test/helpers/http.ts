@@ -1,8 +1,9 @@
+import type { OutgoingHttpHeaders } from 'node:http';
 import { expect } from 'vitest';
 
 interface HttpResponse {
   statusCode: number;
-  headers: Record<string, string | undefined>;
+  headers: OutgoingHttpHeaders;
   json(): unknown;
 }
 

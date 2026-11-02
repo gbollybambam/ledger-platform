@@ -7,6 +7,7 @@ import { buildApp } from '../src/app.js';
 import { testUrls } from './helpers/db.js';
 import { buildTestApp } from './helpers/app.js';
 import { closeTestDb, createTestClient, type TestClient } from './helpers/clients.js';
+import { expectErrorBody, expectIdentical401 } from './helpers/http.js';
 
 let API_KEY: string;
 let CLIENT_ID: string;
@@ -75,14 +76,7 @@ describe('F1 client authentication', () => {
       headers: authorization === undefined ? undefined : { authorization },
     });
 
-    expect(response.statusCode).toBe(401);
-    expect(response.json()).toMatchObject({
-      error: {
-        code: 'unauthorized',
-        message: 'Unauthorized',
-        request_id: response.headers['x-request-id'],
-      },
-    });
+    expectErrorBody(response, { status: 401, code: 'unauthorized', message: 'Unauthorized' });
   });
 
   it('returns the same unauthorized body for missing, malformed, and unknown keys', async () => {
@@ -100,32 +94,7 @@ describe('F1 client authentication', () => {
       }),
     ];
 
-    const bodies = cases.map((response) => {
-      expect(response.statusCode).toBe(401);
-      const body: unknown = JSON.parse(response.body);
-      if (typeof body !== 'object' || body === null || !('error' in body)) {
-        throw new Error('expected an error response');
-      }
-      return body.error;
-    });
-
-    expect(
-      bodies.map((body) => {
-        if (
-          typeof body !== 'object' ||
-          body === null ||
-          !('code' in body) ||
-          !('message' in body)
-        ) {
-          throw new Error('expected an error body');
-        }
-        return { code: body.code, message: body.message };
-      }),
-    ).toEqual([
-      { code: 'unauthorized', message: 'Unauthorized' },
-      { code: 'unauthorized', message: 'Unauthorized' },
-      { code: 'unauthorized', message: 'Unauthorized' },
-    ]);
+    expectIdentical401(cases);
   });
 
   it('keeps health endpoints public', async () => {
@@ -187,31 +156,14 @@ describe('F1 client authentication', () => {
       payload: 'x'.repeat(2_000_000),
     });
 
-    expect(baseline.statusCode).toBe(401);
-    expect(malformed.statusCode).toBe(401);
-    expect(large.statusCode).toBe(401);
-    expect(malformed.headers['content-type']).toBe(baseline.headers['content-type']);
-    expect(large.headers['content-type']).toBe(baseline.headers['content-type']);
-    expect(malformed.headers['www-authenticate']).toBe(baseline.headers['www-authenticate']);
-    expect(large.headers['www-authenticate']).toBe(baseline.headers['www-authenticate']);
-    expect(malformed.json()).toMatchObject({
-      error: { code: 'unauthorized', message: 'Unauthorized' },
-    });
-    expect(large.json()).toMatchObject({
-      error: { code: 'unauthorized', message: 'Unauthorized' },
-    });
+    expectIdentical401([baseline, malformed, large]);
   });
 
   it('returns the standard unauthorized response for malformed URL requests', async () => {
     for (const url of ['/%', '/health/%zz']) {
       const response = await app.inject({ method: 'GET', url });
-      expect(response.statusCode, url).toBe(401);
+      expectErrorBody(response, { status: 401, code: 'unauthorized', message: 'Unauthorized' });
       expect(response.headers['www-authenticate'], url).toBe('Bearer');
-      const body = response.json<{ error: { request_id: string } }>();
-      expect(response.headers['x-request-id'], url).toBe(body.error.request_id);
-      expect(body, url).toMatchObject({
-        error: { code: 'unauthorized', message: 'Unauthorized' },
-      });
       expect(response.body, url).not.toContain(url);
       expect(response.body, url).not.toContain('Error');
       expect(response.body, url).not.toContain('at ');
@@ -240,10 +192,7 @@ describe('F1 client authentication', () => {
       payload: '{"broken"',
     });
 
-    expect(response.statusCode).toBe(401);
-    expect(response.json()).toMatchObject({
-      error: { code: 'unauthorized', request_id: response.headers['x-request-id'] },
-    });
+    expectErrorBody(response, { status: 401, code: 'unauthorized' });
   });
 
   it('protects non-public routes regardless of their path prefix', async () => {
@@ -252,10 +201,7 @@ describe('F1 client authentication', () => {
       url: '/internal/status',
     });
 
-    expect(response.statusCode).toBe(401);
-    expect(response.json()).toMatchObject({
-      error: { code: 'unauthorized', message: 'Unauthorized' },
-    });
+    expectErrorBody(response, { status: 401, code: 'unauthorized', message: 'Unauthorized' });
   });
 
   it('does not include an API key or Authorization header in logs', async () => {
@@ -373,10 +319,7 @@ describe('F1 authentication integration', () => {
       headers: { authorization: authHeader() },
     });
 
-    expect(response.statusCode).toBe(404);
-    expect(response.json()).toMatchObject({
-      error: { code: 'not_found', message: 'Route not found' },
-    });
+    expectErrorBody(response, { status: 404, code: 'not_found', message: 'Route not found' });
   });
 
   it('uses identical 401 responses for every invalid credential case', async () => {
@@ -407,28 +350,7 @@ describe('F1 authentication integration', () => {
         }),
       );
 
-      const requestIds = new Set<string>();
-      const comparableBodies = cases.map((response) => {
-        expect(response.statusCode).toBe(401);
-        expect(response.headers['content-type']).toContain('application/json');
-        expect(response.headers['www-authenticate']).toBe('Bearer');
-        const body = response.json<{
-          error: { code: string; message: string; request_id: string };
-        }>();
-        expect(body.error.request_id).toMatch(
-          /^[0-9a-f]{8}-[0-9a-f]{4}-[4-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-        );
-        requestIds.add(body.error.request_id);
-        return { code: body.error.code, message: body.error.message };
-      });
-
-      expect(requestIds.size).toBe(cases.length);
-      expect(comparableBodies).toEqual([
-        { code: 'unauthorized', message: 'Unauthorized' },
-        { code: 'unauthorized', message: 'Unauthorized' },
-        { code: 'unauthorized', message: 'Unauthorized' },
-        { code: 'unauthorized', message: 'Unauthorized' },
-      ]);
+      expectIdentical401(cases);
     } finally {
       await migrator.query(
         `UPDATE clients SET status = 'active', revoked_at = NULL WHERE id = $1`,
@@ -524,10 +446,7 @@ describe('F1 authentication integration', () => {
       headers: { authorization: authHeader() },
     });
 
-    expect(response.statusCode).toBe(403);
-    expect(response.json()).toMatchObject({
-      error: { code: 'forbidden', request_id: response.headers['x-request-id'] },
-    });
+    expectErrorBody(response, { status: 403, code: 'forbidden' });
   });
 
   it('rejects a revoked key on the next request', async () => {
@@ -549,13 +468,8 @@ describe('F1 authentication integration', () => {
         url: '/v1/whoami',
         headers: { authorization: authHeader() },
       });
-      expect(after.statusCode).toBe(401);
-      expect(after.headers['content-type']).toBe(before.headers['content-type']);
+      expectErrorBody(after, { status: 401, code: 'unauthorized', message: 'Unauthorized' });
       expect(after.headers['www-authenticate']).toBe('Bearer');
-      expect(after.json<{ error: { code: string; message: string } }>().error).toMatchObject({
-        code: 'unauthorized',
-        message: 'Unauthorized',
-      });
     } finally {
       await migrator.query(
         `UPDATE clients SET status = 'active', revoked_at = NULL WHERE id = $1`,

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildTestApp } from './helpers/app.js';
 import { closeTestDb, createTestClient, type TestClient } from './helpers/clients.js';
+import { expectErrorBody } from './helpers/http.js';
 
 let client: TestClient;
 
@@ -33,14 +34,7 @@ describe('error format', () => {
       url: '/nope',
       headers: { authorization: client.authorization },
     });
-    expect(res.statusCode).toBe(404);
-    expect(res.json()).toEqual({
-      error: {
-        code: 'not_found',
-        message: 'Route not found',
-        request_id: res.headers['x-request-id'],
-      },
-    });
+    expectErrorBody(res, { status: 404, code: 'not_found', message: 'Route not found' });
   });
 
   it('hides internal details on a 500', async () => {
@@ -49,8 +43,7 @@ describe('error format', () => {
       url: '/v1/boom',
       headers: { authorization: client.authorization },
     });
-    expect(res.statusCode).toBe(500);
+    expectErrorBody(res, { status: 500, code: 'internal_error' });
     expect(res.body).not.toContain('secret internal detail');
-    expect(res.json()).toMatchObject({ error: { code: 'internal_error' } });
   });
 });
