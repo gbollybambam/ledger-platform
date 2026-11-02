@@ -1,4 +1,5 @@
 import { exec } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -9,6 +10,7 @@ import { testUrls } from './helpers/db.js';
 const execAsync = promisify(exec);
 const cwd = process.cwd();
 let parallelClient: TestClient;
+const gatewayName = `gateway-${randomUUID().replaceAll('-', '').slice(0, 8)}`;
 
 async function runCli(...args: string[]) {
   const command = args[0]!.replace('client:', '');
@@ -62,12 +64,14 @@ describe('client administration output', () => {
   beforeAll(async () => {
     migrator = new pg.Client({ connectionString: testUrls().migrator });
     await migrator.connect();
-    await migrator.query('DELETE FROM clients WHERE name = $1', ['gateway']);
-    parallelClient = await createTestClient({ name: `parallel-${Date.now()}` });
+    await migrator.query('DELETE FROM clients WHERE name = $1', [gatewayName]);
+    parallelClient = await createTestClient({
+      name: `parallel-${randomUUID().replaceAll('-', '').slice(0, 8)}`,
+    });
   });
 
   afterAll(async () => {
-    await migrator.query('DELETE FROM clients WHERE name = $1', ['gateway']);
+    await migrator.query('DELETE FROM clients WHERE name = $1', [gatewayName]);
     await parallelClient.remove();
     await migrator.end();
     await closeTestDb();
@@ -79,14 +83,16 @@ describe('client administration output', () => {
         'client:create',
         '--',
         '--name',
-        'gateway',
+        gatewayName,
         '--scopes',
         'ledger:write,ledger:read',
       );
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toMatch(
-        /^client created\r?\nid:[ ]{6}[0-9a-f-]{36}\r?\nname:[ ]{4}gateway\r?\nscopes:[ ]{2}ledger:read,ledger:write\r?\nprefix:[ ]{2}lk_[A-Za-z0-9_-]{5}\r?\napi_key: lk_[A-Za-z0-9_-]{43}\r?\n$/,
+        new RegExp(
+          `^client created\\r?\\nid:[ ]{6}[0-9a-f-]{36}\\r?\\nname:[ ]+${gatewayName}\\r?\\nscopes:[ ]{2}ledger:read,ledger:write\\r?\\nprefix:[ ]{2}lk_[A-Za-z0-9_-]{5}\\r?\\napi_key: lk_[A-Za-z0-9_-]{43}\\r?\\n$`,
+        ),
       );
       expect(result.stderr).toBe('Save this key now. It cannot be shown again.\n');
 
@@ -95,7 +101,7 @@ describe('client administration output', () => {
       expect(result.stdout.match(new RegExp(key!, 'g'))).toHaveLength(1);
       expect(result.stderr).not.toContain(key!);
     } finally {
-      await deleteClient('gateway');
+      await deleteClient(gatewayName);
     }
   }, 60_000);
 
@@ -106,7 +112,7 @@ describe('client administration output', () => {
         'client:create',
         '--',
         '--name',
-        'gateway',
+        gatewayName,
         '--scopes',
         'ledger:read',
       );
@@ -114,12 +120,12 @@ describe('client administration output', () => {
 
       const listed = await runProcessCliWithEnv({}, 'client:list');
       expect(listed.exitCode).toBe(0);
-      expect(listed.stdout).toContain('gateway');
+      expect(listed.stdout).toContain(gatewayName);
 
-      const revoked = await runProcessCliWithEnv({}, 'client:revoke', '--', '--name', 'gateway');
+      const revoked = await runProcessCliWithEnv({}, 'client:revoke', '--', '--name', gatewayName);
       expect(revoked.exitCode).toBe(0);
     } finally {
-      await deleteClient('gateway');
+      await deleteClient(gatewayName);
     }
   }, 60_000);
 
@@ -140,7 +146,7 @@ describe('client administration output', () => {
         'client:create',
         '--',
         '--name',
-        'gateway',
+        gatewayName,
         '--scopes',
         'ledger:nope',
       );
@@ -153,7 +159,7 @@ describe('client administration output', () => {
         'client:create',
         '--',
         '--name',
-        'gateway',
+        gatewayName,
         '--scopes',
         'ledger:read',
       );
@@ -163,46 +169,46 @@ describe('client administration output', () => {
         'client:create',
         '--',
         '--name',
-        'gateway',
+        gatewayName,
         '--scopes',
         'ledger:read',
       );
       expect(duplicate.exitCode).toBe(1);
-      expect(duplicate.stderr).toBe('a client named "gateway" already exists\n');
+      expect(duplicate.stderr).toBe(`a client named "${gatewayName}" already exists\n`);
     } finally {
-      await deleteClient('gateway');
+      await deleteClient(gatewayName);
     }
   }, 60_000);
 
   it('lists clients with padded columns and never prints a key or hash', async () => {
     try {
-      await runCli('client:create', '--', '--name', 'gateway', '--scopes', 'ledger:read');
+      await runCli('client:create', '--', '--name', gatewayName, '--scopes', 'ledger:read');
       const result = await runCli('client:list');
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('NAME  ID  PREFIX  SCOPES  STATUS  CREATED');
-      expect(result.stdout).toContain('gateway');
+      expect(result.stdout).toContain(gatewayName);
       expect(result.stdout).not.toMatch(/lk_[A-Za-z0-9_-]{43}/);
       expect(result.stdout).not.toMatch(/\b[a-f0-9]{64}\b/i);
     } finally {
-      await deleteClient('gateway');
+      await deleteClient(gatewayName);
     }
   }, 60_000);
 
   it('revokes a client, is idempotent, and reports unknown names on stderr', async () => {
     try {
-      await runCli('client:create', '--', '--name', 'gateway', '--scopes', 'ledger:read');
-      const first = await runCli('client:revoke', '--', '--name', 'gateway');
+      await runCli('client:create', '--', '--name', gatewayName, '--scopes', 'ledger:read');
+      const first = await runCli('client:revoke', '--', '--name', gatewayName);
       expect(first).toEqual({
         exitCode: 0,
-        stdout: 'client revoked: gateway\n',
+        stdout: `client revoked: ${gatewayName}\n`,
         stderr: '',
       });
 
-      const second = await runCli('client:revoke', '--', '--name', 'gateway');
+      const second = await runCli('client:revoke', '--', '--name', gatewayName);
       expect(second).toEqual({
         exitCode: 0,
-        stdout: 'client already revoked: gateway\n',
+        stdout: `client already revoked: ${gatewayName}\n`,
         stderr: '',
       });
 
@@ -213,7 +219,7 @@ describe('client administration output', () => {
       expect(unknown.stderr).not.toMatch(/lk_[A-Za-z0-9_-]{43}/);
       expect(unknown.stderr).not.toMatch(/\b[a-f0-9]{64}\b/i);
     } finally {
-      await deleteClient('gateway');
+      await deleteClient(gatewayName);
     }
   }, 60_000);
 
