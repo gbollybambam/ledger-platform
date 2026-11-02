@@ -14,16 +14,16 @@ export async function createTestClient(_options?: {
   scopes?: Scope[];
   name?: string;
 }): Promise<TestClient> {
-  throw new Error('createTestClient is not implemented');
+  throw new Error('not implemented');
 }
 
 export async function withTestClient<T>(
   _options: { scopes?: Scope[]; name?: string },
   _fn: (client: TestClient) => Promise<T>,
 ): Promise<T> {
-  throw new Error('withTestClient is not implemented');
+  throw new Error('not implemented');
 }
 
 export async function closeTestDb(): Promise<void> {
-  return undefined;
+  throw new Error('not implemented');
 }

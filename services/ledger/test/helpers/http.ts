@@ -8,9 +8,9 @@ export function expectErrorBody(
   _response: HttpResponse,
   _expected: { status: number; code: string; message?: string },
 ): void {
-  return undefined;
+  throw new Error('not implemented');
 }
 
 export function expectIdentical401(_responses: HttpResponse[]): void {
-  return undefined;
+  throw new Error('not implemented');
 }

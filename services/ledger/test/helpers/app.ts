@@ -12,5 +12,5 @@ export async function buildTestApp(_options?: {
   routes?: (app: FastifyInstance) => void;
   logs?: boolean;
 }): Promise<TestApp> {
-  throw new Error('buildTestApp is not implemented');
+  throw new Error('not implemented');
 }

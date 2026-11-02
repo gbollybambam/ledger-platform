@@ -10,6 +10,12 @@ import { captureLogs } from './helpers/logs.js';
 
 let pool: Pool;
 
+interface TestResponse {
+  statusCode: number;
+  headers: Record<string, string>;
+  json(): unknown;
+}
+
 afterAll(async () => {
   await pool?.end();
   await closeTestDb();
@@ -63,29 +69,76 @@ describe('shared test helpers', () => {
     expect(result.rows[0]?.count).toBe('0');
   });
 
-  it('rejects a wrong error shape', () => {
-    const response = {
-      statusCode: 400,
-      headers: {
-        'content-type': 'application/json; charset=utf-8',
-        'x-request-id': 'request-1',
+  it.each([
+    [
+      'extra error field',
+      {
+        error: {
+          code: 'invalid_request',
+          message: 'Invalid request',
+          request_id: 'request-1',
+          extra: 'unexpected',
+        },
       },
-      json: () => ({
+    ],
+    [
+      'missing request_id',
+      { error: { code: 'invalid_request', message: 'Invalid request' } },
+    ],
+    [
+      'request_id differs from header',
+      {
         error: {
           code: 'invalid_request',
           message: 'Invalid request',
           request_id: 'request-2',
         },
-      }),
+      },
+    ],
+    ['non-JSON content type', { error: { code: 'invalid_request', message: 'Invalid request' } }],
+    [
+      'wrong status',
+      {
+        error: {
+          code: 'invalid_request',
+          message: 'Invalid request',
+          request_id: 'request-1',
+        },
+      },
+    ],
+    [
+      'wrong code',
+      {
+        error: {
+          code: 'other_error',
+          message: 'Invalid request',
+          request_id: 'request-1',
+        },
+      },
+    ],
+  ])('expectErrorBody rejects %s', (_case, body) => {
+    const response = {
+      statusCode: _case === 'wrong status' ? 422 : 400,
+      headers: {
+        'content-type': _case === 'non-JSON content type' ? 'text/plain' : 'application/json',
+        'x-request-id': 'request-1',
+      },
+      json: () => body,
     };
+    let didThrow = false;
 
-    expect(() =>
+    try {
       expectErrorBody(response, {
         status: 400,
         code: 'invalid_request',
         message: 'Invalid request',
-      }),
-    ).toThrow();
+      });
+    } catch (error) {
+      didThrow = true;
+      expect(error).not.toMatchObject({ message: 'not implemented' });
+    }
+
+    expect(didThrow).toBe(true);
   });
 
   it('accepts the exact error shape', () => {
@@ -158,6 +211,63 @@ describe('shared test helpers', () => {
     expect(() => expectIdentical401(responses)).toThrow();
   });
 
+  it.each([
+    ['different status', (response: TestResponse) => ({ ...response, statusCode: 403 })],
+    [
+      'different www-authenticate header',
+      (response: TestResponse) => ({
+        ...response,
+        headers: { ...response.headers, 'www-authenticate': 'Basic' },
+      }),
+    ],
+    [
+      'different message',
+      (response: TestResponse) => ({
+        ...response,
+        json: () => ({
+          error: {
+            code: 'unauthorized',
+            message: 'Different',
+            request_id: 'request-2',
+          },
+        }),
+      }),
+    ],
+    [
+      'duplicate request_id',
+      (response: TestResponse) => ({
+        ...response,
+        headers: { ...response.headers, 'x-request-id': 'request-1' },
+        json: () => ({
+          error: { code: 'unauthorized', message: 'Unauthorized', request_id: 'request-1' },
+        }),
+      }),
+    ],
+  ])('expectIdentical401 rejects %s', (_case, mutate) => {
+    const responses = ['request-1', 'request-2'].map((requestId) => ({
+      statusCode: 401,
+      headers: {
+        'content-type': 'application/json',
+        'www-authenticate': 'Bearer',
+        'x-request-id': requestId,
+      },
+      json: () => ({
+        error: { code: 'unauthorized', message: 'Unauthorized', request_id: requestId },
+      }),
+    }));
+    const mutated = [responses[0]!, mutate(responses[1]!)];
+    let didThrow = false;
+
+    try {
+      expectIdentical401(mutated);
+    } catch (error) {
+      didThrow = true;
+      expect(error).not.toMatchObject({ message: 'not implemented' });
+    }
+
+    expect(didThrow).toBe(true);
+  });
+
   it('accepts identical 401 responses with distinct request IDs', () => {
     const responses = ['request-1', 'request-2'].map((requestId) => ({
       statusCode: 401,
@@ -186,6 +296,19 @@ describe('shared test helpers', () => {
       expect(named.name).toBe(customName);
     } finally {
       await Promise.all([twoScopes.remove(), oneScope.remove(), named.remove()]);
+    }
+  });
+
+  it('createTestClient uses the documented defaults', async () => {
+    const client = await createTestClient();
+
+    try {
+      expect(client.scopes).toEqual(['ledger:read']);
+      expect(client.name).toMatch(/^t-[0-9a-f]{8}$/);
+      expect(client.authorization).toBe(`Bearer ${client.key}`);
+      expect(client.key).toMatch(/^lk_[A-Za-z0-9_-]{43}$/);
+    } finally {
+      await client.remove();
     }
   });
 
@@ -279,5 +402,29 @@ describe('shared test helpers', () => {
     logs.stream.write('not json\n');
 
     expect(() => logs.lines()).toThrow();
+  });
+
+  it('closeTestDb closes the named shared migrator connection', async () => {
+    const client = await createTestClient({ name: `application-name-${randomUUID()}` });
+
+    try {
+      const before = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count
+           FROM pg_stat_activity
+          WHERE application_name = 'ledger-test-helper'`,
+      );
+      expect(before.rows[0]?.count).toBe('1');
+
+      await closeTestDb();
+
+      const after = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count
+           FROM pg_stat_activity
+          WHERE application_name = 'ledger-test-helper'`,
+      );
+      expect(after.rows[0]?.count).toBe('0');
+    } finally {
+      await client.remove();
+    }
   });
 });

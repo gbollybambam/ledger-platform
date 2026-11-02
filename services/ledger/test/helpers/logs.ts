@@ -18,6 +18,8 @@ export function captureLogs(): CapturedLogs {
   return {
     stream,
     text: () => text,
-    lines: () => [],
+    lines: () => {
+      throw new Error('not implemented');
+    },
   };
 }
