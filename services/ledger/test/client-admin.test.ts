@@ -1,21 +1,33 @@
 import { exec } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { runClientAdmin } from '../scripts/lib/client-admin.js';
+import { closeTestDb, createTestClient, type TestClient } from './helpers/clients.js';
 import { testUrls } from './helpers/db.js';
 
 const execAsync = promisify(exec);
 const cwd = process.cwd();
-const PARALLEL_ID = '00000000-0000-0000-0000-000000000040';
-const PARALLEL_NAME = 'parallel-revoke';
-const PARALLEL_KEY = `lk_${'R'.repeat(43)}`;
+let parallelClient: TestClient;
 
 async function runCli(...args: string[]) {
-  return runCliWithEnv({}, ...args);
+  const command = args[0]!.replace('client:', '');
+  const commandArgs = args.slice(1).filter((arg) => arg !== '--');
+  let stdout = '';
+  let stderr = '';
+  const exitCode = await runClientAdmin([command, ...commandArgs], {
+    databaseUrl: testUrls().migrator,
+    stdout: (text) => {
+      stdout += text;
+    },
+    stderr: (text) => {
+      stderr += text;
+    },
+  });
+  return { exitCode, stdout, stderr };
 }
 
-async function runCliWithEnv(extraEnv: NodeJS.ProcessEnv, ...args: string[]) {
+async function runProcessCliWithEnv(extraEnv: NodeJS.ProcessEnv, ...args: string[]) {
   try {
     const command = `npm run --silent ${args.map((arg) => `"${arg.replaceAll('"', '\\"')}"`).join(' ')}`;
     const result = await execAsync(command, {
@@ -51,24 +63,14 @@ describe('client administration output', () => {
     migrator = new pg.Client({ connectionString: testUrls().migrator });
     await migrator.connect();
     await migrator.query('DELETE FROM clients WHERE name = $1', ['gateway']);
-    await migrator.query('DELETE FROM clients WHERE id = $1', [PARALLEL_ID]);
-    await migrator.query(
-      `INSERT INTO clients (id, name, key_prefix, key_hash, scopes)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [
-        PARALLEL_ID,
-        PARALLEL_NAME,
-        PARALLEL_KEY.slice(0, 8),
-        createHash('sha256').update(PARALLEL_KEY).digest(),
-        ['ledger:read'],
-      ],
-    );
+    parallelClient = await createTestClient({ name: `parallel-${Date.now()}` });
   });
 
   afterAll(async () => {
     await migrator.query('DELETE FROM clients WHERE name = $1', ['gateway']);
-    await migrator.query('DELETE FROM clients WHERE id = $1', [PARALLEL_ID]);
+    await parallelClient.remove();
     await migrator.end();
+    await closeTestDb();
   });
 
   it('client:create prints the exact fields and exposes the key exactly once', async () => {
@@ -92,6 +94,30 @@ describe('client administration output', () => {
       expect(key).toBeDefined();
       expect(result.stdout.match(new RegExp(key!, 'g'))).toHaveLength(1);
       expect(result.stderr).not.toContain(key!);
+    } finally {
+      await deleteClient('gateway');
+    }
+  }, 60_000);
+
+  it('keeps one real-process smoke path for create, list, and revoke', async () => {
+    try {
+      const created = await runProcessCliWithEnv(
+        {},
+        'client:create',
+        '--',
+        '--name',
+        'gateway',
+        '--scopes',
+        'ledger:read',
+      );
+      expect(created.exitCode).toBe(0);
+
+      const listed = await runProcessCliWithEnv({}, 'client:list');
+      expect(listed.exitCode).toBe(0);
+      expect(listed.stdout).toContain('gateway');
+
+      const revoked = await runProcessCliWithEnv({}, 'client:revoke', '--', '--name', 'gateway');
+      expect(revoked.exitCode).toBe(0);
     } finally {
       await deleteClient('gateway');
     }
@@ -193,7 +219,10 @@ describe('client administration output', () => {
 
   it('reports unexpected connection errors without exposing the URL or password', async () => {
     const databaseUrl = 'postgresql://admin:super-secret@127.0.0.1:1/ledger';
-    const result = await runCliWithEnv({ MIGRATION_DATABASE_URL: databaseUrl }, 'client:list');
+    const result = await runProcessCliWithEnv(
+      { MIGRATION_DATABASE_URL: databaseUrl },
+      'client:list',
+    );
 
     expect(result.exitCode).toBe(2);
     expect(result.stdout).toBe('');
@@ -205,38 +234,38 @@ describe('client administration output', () => {
   it('handles parallel revokes atomically and preserves revoked_at', async () => {
     try {
       const results = await Promise.all([
-        runCli('client:revoke', '--', '--name', PARALLEL_NAME),
-        runCli('client:revoke', '--', '--name', PARALLEL_NAME),
+        runCli('client:revoke', '--', '--name', parallelClient.name),
+        runCli('client:revoke', '--', '--name', parallelClient.name),
       ]);
 
       expect(results.map((result) => result.exitCode).sort()).toEqual([0, 0]);
       expect(results.map((result) => result.stdout).sort()).toEqual([
-        `client already revoked: ${PARALLEL_NAME}\n`,
-        `client revoked: ${PARALLEL_NAME}\n`,
+        `client already revoked: ${parallelClient.name}\n`,
+        `client revoked: ${parallelClient.name}\n`,
       ]);
       expect(results.every((result) => result.stderr === '')).toBe(true);
 
       const first = await migrator.query<{ revoked_at: Date }>(
         'SELECT revoked_at FROM clients WHERE id = $1',
-        [PARALLEL_ID],
+        [parallelClient.id],
       );
       const firstRevokedAt = first.rows[0]?.revoked_at;
       expect(firstRevokedAt).toBeInstanceOf(Date);
 
-      const repeated = await runCli('client:revoke', '--', '--name', PARALLEL_NAME);
+      const repeated = await runCli('client:revoke', '--', '--name', parallelClient.name);
       expect(repeated).toEqual({
         exitCode: 0,
-        stdout: `client already revoked: ${PARALLEL_NAME}\n`,
+        stdout: `client already revoked: ${parallelClient.name}\n`,
         stderr: '',
       });
 
       const second = await migrator.query<{ revoked_at: Date }>(
         'SELECT revoked_at FROM clients WHERE id = $1',
-        [PARALLEL_ID],
+        [parallelClient.id],
       );
       expect(second.rows[0]?.revoked_at).toEqual(firstRevokedAt);
     } finally {
-      await deleteClient(PARALLEL_NAME);
+      await deleteClient(parallelClient.name);
     }
   }, 60_000);
 });

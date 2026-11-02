@@ -1,17 +1,19 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  clientInsertSql,
+  closeTestDb,
+  createTestClient,
+  insertTestClientRow,
+  type TestClient,
+} from './helpers/clients.js';
 import { createTestPool, testUrls } from './helpers/db.js';
 
 const PERMISSION_DENIED = '42501';
-const FIXTURE_ID = '00000000-0000-0000-0000-000000000020';
-const FIXTURE_NAME = 'migration-test';
-const FIXTURE_KEY = `lk_${'M'.repeat(43)}`;
-const CONSTRAINT_IDS = [
-  '00000000-0000-0000-0000-000000000021',
-  '00000000-0000-0000-0000-000000000022',
-  '00000000-0000-0000-0000-000000000023',
-];
+const FIXTURE_NAME = `migration-${randomUUID()}`;
+let FIXTURE_KEY: string;
+const CONSTRAINT_IDS = [randomUUID(), randomUUID(), randomUUID()];
 
 async function sqlState(promise: Promise<unknown>): Promise<string | undefined> {
   try {
@@ -29,31 +31,22 @@ async function sqlState(promise: Promise<unknown>): Promise<string | undefined> 
 describe('clients migration and least privilege', () => {
   let app: pg.Pool;
   let migrator: pg.Client;
+  let fixture: TestClient;
 
   beforeAll(async () => {
     app = createTestPool();
     migrator = new pg.Client({ connectionString: testUrls().migrator });
     await migrator.connect();
-    await migrator.query('DELETE FROM clients WHERE id = $1', [FIXTURE_ID]);
     await migrator.query('DELETE FROM clients WHERE id = ANY($1::uuid[])', [CONSTRAINT_IDS]);
-    await migrator.query(
-      `INSERT INTO clients
-         (id, name, key_prefix, key_hash, scopes)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [
-        FIXTURE_ID,
-        FIXTURE_NAME,
-        FIXTURE_KEY.slice(0, 8),
-        createHash('sha256').update(FIXTURE_KEY).digest(),
-        ['ledger:read'],
-      ],
-    );
+    fixture = await createTestClient({ name: FIXTURE_NAME });
+    FIXTURE_KEY = fixture.key;
   });
 
   afterAll(async () => {
     await app.end();
-    await migrator.query('DELETE FROM clients WHERE id = $1', [FIXTURE_ID]);
+    await fixture.remove();
     await migrator.end();
+    await closeTestDb();
   });
 
   it('creates the clients table with the RFC columns', async () => {
@@ -82,11 +75,13 @@ describe('clients migration and least privilege', () => {
 
     expect(
       await sqlState(
-        app.query(
-          `INSERT INTO clients (id, name, key_prefix, key_hash, scopes)
-           VALUES ('00000000-0000-0000-0000-000000000001', 'permission-test',
-                   'lk_test', decode('00', 'hex'), ARRAY['ledger:read'])`,
-        ),
+        app.query(clientInsertSql, [
+          randomUUID(),
+          `permission-${randomUUID()}`,
+          'lk_test',
+          Buffer.from([0]),
+          ['ledger:read'],
+        ]),
       ),
     ).toBe(PERMISSION_DENIED);
     expect(await sqlState(app.query('UPDATE clients SET name = name'))).toBe(PERMISSION_DENIED);
@@ -102,7 +97,7 @@ describe('clients migration and least privilege', () => {
       `SELECT row_to_json(c) AS row, c.key_prefix, c.key_hash
          FROM clients AS c
         WHERE c.id = $1`,
-      [FIXTURE_ID],
+      [fixture.id],
     );
 
     const row = rows[0]!;
@@ -120,24 +115,18 @@ describe('clients migration and least privilege', () => {
   });
 
   it('enforces client constraints in the database', async () => {
-    const duplicateNameId = '00000000-0000-0000-0000-000000000021';
-    const duplicateHashId = '00000000-0000-0000-0000-000000000022';
+    const duplicateNameId = randomUUID();
+    const duplicateHashId = randomUUID();
     const duplicateHash = createHash('sha256').update('duplicate-hash-key').digest();
     const validHash = createHash('sha256').update('valid-constraint-key').digest();
-    const insert = async (
+    const insert = (
       id: string,
       name: string,
       hash: Buffer,
       scopes: string[],
-      status = 'active',
+      status: 'active' | 'revoked' = 'active',
       revokedAt: Date | null = null,
-    ) =>
-      migrator.query(
-        `INSERT INTO clients
-           (id, name, key_prefix, key_hash, scopes, status, revoked_at)
-         VALUES ($1, $2, 'lk_test', $3, $4, $5, $6)`,
-        [id, name, hash, scopes, status, revokedAt],
-      );
+    ) => insertTestClientRow({ id, name, hash, scopes, status, revokedAt });
     const errorCode = async (promise: Promise<unknown>): Promise<string | undefined> => {
       try {
         await promise;
@@ -178,15 +167,11 @@ describe('clients migration and least privilege', () => {
         await errorCode(insert(duplicateHashId, 'constraint-base', duplicateHash, ['ledger:read'])),
       ).toBe('23505');
       expect(
-        await errorCode(
-          insert('00000000-0000-0000-0000-000000000023', 'another-name', validHash, [
-            'ledger:read',
-          ]),
-        ),
+        await errorCode(insert(randomUUID(), 'another-name', validHash, ['ledger:read'])),
       ).toBe('23505');
     } finally {
       await migrator.query('DELETE FROM clients WHERE id = ANY($1::uuid[])', [
-        [duplicateNameId, duplicateHashId, '00000000-0000-0000-0000-000000000023'],
+        [duplicateNameId, duplicateHashId],
       ]);
     }
   });

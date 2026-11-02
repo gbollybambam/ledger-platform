@@ -14,6 +14,9 @@ export interface TestClient {
   remove(): Promise<void>;
 }
 
+export const clientInsertSql = `INSERT INTO clients (id, name, key_prefix, key_hash, scopes)
+                                VALUES ($1, $2, $3, $4, $5)`;
+
 let migrator: pg.Client | undefined;
 let migratorPromise: Promise<pg.Client> | undefined;
 let queryChain = Promise.resolve();
@@ -105,4 +108,27 @@ export async function closeTestDb(): Promise<void> {
     migratorPromise = undefined;
     await client.end();
   }
+}
+
+export async function insertTestClientRow(options: {
+  id: string;
+  name: string;
+  hash: Buffer;
+  scopes: string[];
+  status?: 'active' | 'revoked';
+  revokedAt?: Date | null;
+}): Promise<void> {
+  await query(
+    `INSERT INTO clients
+       (id, name, key_prefix, key_hash, scopes, status, revoked_at)
+     VALUES ($1, $2, 'lk_test', $3, $4, $5, $6)`,
+    [
+      options.id,
+      options.name,
+      options.hash,
+      options.scopes,
+      options.status ?? 'active',
+      options.revokedAt ?? null,
+    ],
+  );
 }

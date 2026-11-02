@@ -1,20 +1,21 @@
-import { createHash } from 'node:crypto';
-import { Writable } from 'node:stream';
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
+import { Writable } from 'node:stream';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
-import { createTestPool, testUrls } from './helpers/db.js';
+import { testUrls } from './helpers/db.js';
+import { buildTestApp } from './helpers/app.js';
+import { closeTestDb, createTestClient, type TestClient } from './helpers/clients.js';
 
-const API_KEY = `lk_${'A'.repeat(43)}`;
-const CLIENT_ID = '00000000-0000-0000-0000-000000000010';
-const CLIENT_NAME = 'f1-auth-client';
-const READ_CLIENT_ID = '00000000-0000-0000-0000-000000000011';
-const READ_CLIENT_NAME = 'f1-read-client';
-const READ_API_KEY = `lk_${'B'.repeat(43)}`;
-const WRITE_CLIENT_ID = '00000000-0000-0000-0000-000000000012';
-const WRITE_CLIENT_NAME = 'f1-write-client';
-const WRITE_API_KEY = `lk_${'C'.repeat(43)}`;
+let API_KEY: string;
+let CLIENT_ID: string;
+let CLIENT_NAME: string;
+let READ_API_KEY: string;
+let WRITE_API_KEY: string;
+let primaryClient: TestClient;
+let readClient: TestClient;
+let writeClient: TestClient;
 
 function authHeader(key = API_KEY): string {
   return `Bearer ${key}`;
@@ -24,45 +25,49 @@ describe('F1 client authentication', () => {
   let app: FastifyInstance;
   let pool: pg.Pool;
   let migrator: pg.Client;
-  let logs = '';
-  let logStream: Writable;
+  let testApp: Awaited<ReturnType<typeof buildTestApp>>;
 
   beforeAll(async () => {
-    pool = createTestPool();
+    primaryClient = await createTestClient({ scopes: ['ledger:read'] });
+    readClient = await createTestClient({ scopes: ['ledger:read'] });
+    writeClient = await createTestClient({ scopes: ['ledger:write'] });
+    API_KEY = primaryClient.key;
+    CLIENT_ID = primaryClient.id;
+    CLIENT_NAME = primaryClient.name;
+    READ_API_KEY = readClient.key;
+    WRITE_API_KEY = writeClient.key;
     migrator = new pg.Client({ connectionString: testUrls().migrator });
     await migrator.connect();
-    await migrator.query('DELETE FROM clients WHERE id = ANY($1::uuid[])', [
-      [CLIENT_ID, READ_CLIENT_ID, WRITE_CLIENT_ID],
-    ]);
-    logStream = new Writable({
-      write(chunk: unknown, _encoding: BufferEncoding, callback: (error?: Error | null) => void) {
-        logs += typeof chunk === 'string' ? chunk : String(chunk);
-        callback();
+    testApp = await buildTestApp({
+      logs: true,
+      routes: (candidate) => {
+        candidate.get('/test-only/ledger-write', { config: { access: 'ledger:write' } }, () => ({
+          ok: true,
+        }));
+        candidate.post('/test-only/body', { config: { access: 'any-client' } }, () => ({
+          ok: true,
+        }));
+        candidate.get('/internal/status', { config: { access: 'any-client' } }, () => ({
+          ok: true,
+        }));
       },
     });
-    app = buildApp({
-      pool,
-      logger: { level: 'debug', stream: logStream },
-    });
-    app.get('/test-only/ledger-write', { config: { access: 'ledger:write' } }, () => ({
-      ok: true,
-    }));
-    app.post('/test-only/body', { config: { access: 'any-client' } }, () => ({ ok: true }));
-    app.get('/internal/status', { config: { access: 'any-client' } }, () => ({ ok: true }));
-    await app.ready();
+    pool = testApp.pool;
+    app = testApp.app;
   });
 
   afterAll(async () => {
-    await app.close();
-    await pool.end();
+    await testApp.close();
     await migrator.end();
+    await Promise.all([primaryClient.remove(), readClient.remove(), writeClient.remove()]);
+    await closeTestDb();
   });
 
   it.each([
     ['missing header', undefined],
     ['wrong scheme', 'Basic credentials'],
     ['unknown key', authHeader()],
-    ['prefix alone', authHeader(API_KEY.slice(0, 8))],
+    ['prefix alone', authHeader('lk_')],
   ])('returns the same 401 response for %s', async (_case, authorization) => {
     const response = await app.inject({
       method: 'GET',
@@ -153,7 +158,7 @@ describe('F1 client authentication', () => {
       if (routePath === '/health' || routePath === '/health/ready') {
         continue;
       }
-      const url = routePath!.replace(/:[^/]+/g, '00000000-0000-0000-0000-000000000000');
+      const url = routePath!.replace(/:[^/]+/g, randomUUID());
       const response = await app.inject({ method: method as 'GET' | 'POST', url });
       expect(response.statusCode, route).toBe(401);
     }
@@ -262,8 +267,8 @@ describe('F1 client authentication', () => {
 
     expect(response.body).not.toContain(API_KEY);
     expect(response.body).not.toContain('Authorization');
-    expect(logs).not.toContain(API_KEY);
-    expect(logs).not.toMatch(/authorization/i);
+    expect(testApp.logs()).not.toContain(API_KEY);
+    expect(testApp.logs()).not.toMatch(/authorization/i);
   });
 });
 
@@ -271,76 +276,39 @@ describe('F1 authentication integration', () => {
   let app: FastifyInstance;
   let pool: pg.Pool;
   let migrator: pg.Client;
-  let logs = '';
-  let logStream: Writable;
+  let testApp: Awaited<ReturnType<typeof buildTestApp>>;
 
   beforeAll(async () => {
-    pool = createTestPool();
+    primaryClient = await createTestClient({ scopes: ['ledger:read'] });
+    readClient = await createTestClient({ scopes: ['ledger:read'] });
+    writeClient = await createTestClient({ scopes: ['ledger:write'] });
+    API_KEY = primaryClient.key;
+    CLIENT_ID = primaryClient.id;
+    CLIENT_NAME = primaryClient.name;
+    READ_API_KEY = readClient.key;
+    WRITE_API_KEY = writeClient.key;
     migrator = new pg.Client({ connectionString: testUrls().migrator });
     await migrator.connect();
-    await migrator.query('DELETE FROM clients WHERE id = ANY($1::uuid[])', [
-      [CLIENT_ID, READ_CLIENT_ID, WRITE_CLIENT_ID],
-    ]);
-    await migrator.query(
-      `INSERT INTO clients
-         (id, name, key_prefix, key_hash, scopes)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [
-        CLIENT_ID,
-        CLIENT_NAME,
-        API_KEY.slice(0, 8),
-        createHash('sha256').update(API_KEY).digest(),
-        ['ledger:read'],
-      ],
-    );
-    await migrator.query(
-      `INSERT INTO clients
-         (id, name, key_prefix, key_hash, scopes)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [
-        READ_CLIENT_ID,
-        READ_CLIENT_NAME,
-        READ_API_KEY.slice(0, 8),
-        createHash('sha256').update(READ_API_KEY).digest(),
-        ['ledger:read'],
-      ],
-    );
-    await migrator.query(
-      `INSERT INTO clients
-         (id, name, key_prefix, key_hash, scopes)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [
-        WRITE_CLIENT_ID,
-        WRITE_CLIENT_NAME,
-        WRITE_API_KEY.slice(0, 8),
-        createHash('sha256').update(WRITE_API_KEY).digest(),
-        ['ledger:write'],
-      ],
-    );
-    logStream = new Writable({
-      write(chunk: unknown, _encoding: BufferEncoding, callback: (error?: Error | null) => void) {
-        logs += typeof chunk === 'string' ? chunk : String(chunk);
-        callback();
+    testApp = await buildTestApp({
+      logs: true,
+      routes: (candidate) => {
+        candidate.get('/test-only/ledger-read', { config: { access: 'ledger:read' } }, () => ({
+          ok: true,
+        }));
+        candidate.get('/test-only/ledger-write', { config: { access: 'ledger:write' } }, () => ({
+          ok: true,
+        }));
       },
     });
-    app = buildApp({ pool, logger: { level: 'debug', stream: logStream } });
-    app.get('/test-only/ledger-read', { config: { access: 'ledger:read' } }, () => ({
-      ok: true,
-    }));
-    app.get('/test-only/ledger-write', { config: { access: 'ledger:write' } }, () => ({
-      ok: true,
-    }));
-    await app.ready();
+    pool = testApp.pool;
+    app = testApp.app;
   });
 
   afterAll(async () => {
-    await app.close();
-    await pool.end();
-    await migrator.query('DELETE FROM clients WHERE id = $1', [CLIENT_ID]);
-    await migrator.query('DELETE FROM clients WHERE id = ANY($1::uuid[])', [
-      [READ_CLIENT_ID, WRITE_CLIENT_ID],
-    ]);
+    await testApp.close();
     await migrator.end();
+    await Promise.all([primaryClient.remove(), readClient.remove(), writeClient.remove()]);
+    await closeTestDb();
   });
 
   it('authenticates a valid key and returns client identity and scopes', async () => {
@@ -502,11 +470,11 @@ describe('F1 authentication integration', () => {
 
       expect(successful.statusCode).toBe(200);
       expect(failed.map((response) => response.statusCode)).toEqual([401, 401, 401, 401]);
-      expect(logs).not.toBe('');
-      expect(logs).not.toMatch(/authorization/i);
-      expect(logs).not.toContain(authHeader());
-      expect(logs).not.toContain('Basic credentials');
-      expect(logs).not.toContain(authHeader('lk_unknown'));
+      expect(testApp.logs()).not.toBe('');
+      expect(testApp.logs()).not.toMatch(/authorization/i);
+      expect(testApp.logs()).not.toContain(authHeader());
+      expect(testApp.logs()).not.toContain('Basic credentials');
+      expect(testApp.logs()).not.toContain(authHeader('lk_unknown'));
     } finally {
       await migrator.query(
         `UPDATE clients SET status = 'active', revoked_at = NULL WHERE id = $1`,
