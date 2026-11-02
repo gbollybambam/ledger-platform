@@ -10,16 +10,17 @@ The process for each feature is in `docs/process/feature-loop.md` at the reposit
 
 | # | Work | Status | Tag |
 | - | ---- | ------ | --- |
-| 0 | Skeleton: project, roles, migrations, OpenAPI contract, CI (`docs/features/skeleton.md`) | done | ledger/v0.1.0 |
+| 0 | Skeleton: project, roles, migrations, OpenAPI contract, CI (`docs/features/skeleton.md`) | in progress | ledger/v0.1.0 |
 
 ## Features
 
 | # | Feature | PRD | Status | Feature file | Tag |
 | - | ------- | --- | ------ | ------------ | --- |
-| F1 | Clients, API keys, and scopes | M1 M14 | todo | `docs/features/F01-clients-auth.md` | |
-| F2 | Currencies and accounts | M2 M3 | todo | `docs/features/F02-accounts.md` | |
-| F3 | Transactions core: balanced, immutable, cached totals, balance read | M4 M5 M6 | todo | `docs/features/F03-transactions-core.md` | |
-| F4 | Idempotency for all POSTs | M7 | todo | `docs/features/F04-idempotency.md` | |
+| C1 | Shared test helpers (a chore, before F2) | M14 | todo | `docs/features/C01-test-helpers.md` | |
+| F1 | Clients, API keys, and scopes | M1 M14 | in progress | `docs/features/F01-clients-auth.md` | |
+| F2 | Idempotency framework (built before any real POST) | M7 | todo | `docs/features/F02-idempotency.md` | |
+| F3 | Currencies and accounts | M2 M3 | todo | `docs/features/F03-accounts.md` | |
+| F4 | Transactions core: balanced, immutable, cached totals, balance read | M4 M5 M6 | todo | `docs/features/F04-transactions-core.md` | |
 | F5 | Concurrency proof: stress tests, deadlock and timeout handling | M8 | todo | `docs/features/F05-concurrency-proof.md` | |
 | F6 | Reversals | M9 | todo | `docs/features/F06-reversals.md` | |
 | F7 | Ledger verify | M10 | todo | `docs/features/F07-ledger-verify.md` | **ledger/v0.2.0** |
@@ -27,7 +28,9 @@ The process for each feature is in `docs/process/feature-loop.md` at the reposit
 | F9 | Hardening: contract validation, logs, shutdown, backup and restore drill, benchmark | M12 M13 S1 | todo | `docs/features/F09-hardening.md` | |
 | F10 | Release: README, runbook, known limits, readiness report | M15 | todo | `docs/features/F10-release.md` | **ledger/v1.0.0** |
 
-Only F1 has a written feature file now. Before each later feature starts, the planner writes its file (use the "spec request" prompt in `docs/process/kickoff-prompts.md` at the repository root). The executor does not invent a spec.
+F1, F2, and C1 have written feature files. **Why F2 is idempotency:** the API contract says every POST uses an idempotency key. Building retry safety first means accounts and transactions are idempotent from their first line, instead of being changed later.
+
+Before each later feature starts, the planner writes its file (use the "spec request" prompt in `docs/process/kickoff-prompts.md` at the repository root). The executor does not invent a spec.
 
 ## Cut line
 

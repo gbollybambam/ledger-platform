@@ -16,6 +16,9 @@ It is designed for real money. When a rule and convenience disagree, the rule wi
 | What to build                     | `docs/prd.md`                         |
 | How it works                      | `docs/rfc-001.md`                     |
 | Rules for every feature           | `docs/invariants.md`                  |
+| How code and tests are written    | `docs/patterns.md`                    |
+| Self-review checklist             | `../../docs/process/review-checklist.md` (repository root `docs/process/`) |
+| Mistakes made before, and rules   | `../../docs/process/lessons-from-f1.md` (repository root `docs/process/`) |
 | Order of work and status          | `docs/roadmap.md`                     |
 | All versions, now and later       | `docs/versions.md`                    |
 | The feature I am on now           | `docs/features/F<nn>-<name>.md`       |
@@ -73,12 +76,22 @@ Before you say a task is done, run: `npm run lint && npm run format:check && npm
 
 ## API rules
 
+- **Default deny.** Every control starts closed. The allowed cases are a short, declared list. A test loops over all routes.
+- Strict validation: every route with input has a JSON schema with `additionalProperties: false`, and Fastify is created with `coerceTypes: false`, `removeAdditional: false`, `useDefaults: false`. Validation errors do not echo the input.
+
 - Change `openapi/ledger.v1.yaml` in the same commit as the code. The drift test fails if they differ.
 - Paths start with `/v1`. Changes inside `/v1` are additive.
 - Every `POST` requires an `Idempotency-Key` parameter in the spec.
 - Every error uses `{ "error": { "code", "message", "request_id" } }`.
 
 ## Testing rules
+
+- **Sabotage check:** for every rule, break the production code on purpose and show its test fails. Then restore it. A test that still passes is weak. Fix it.
+- Every rule has a positive and a negative test. A limit is tested on both sides and past the limit.
+- Unique fixtures per test. Cleanup in `try/finally`. No fixed IDs. No test depends on another.
+- Assert exact bodies, status codes, and headers.
+- Use `test/helpers/`. Do not copy fixture code between files.
+- Run scripts in tests with `npm run --silent`.
 
 - Tests first. Show them failing for the right reason before you implement.
 - Never weaken, skip, or delete a test to make it pass.
@@ -93,3 +106,5 @@ Before you say a task is done, run: `npm run lint && npm run format:check && npm
 - Never build anything listed under "Not in v1" in `docs/versions.md`.
 - Never disable a lint rule, a CI check, or a database constraint.
 - Never use `any`, `@ts-ignore`, or `as` casts to silence a type error. Fix the type.
+- Never ask a question about something the feature file lists under "Decisions already made" or "Exact formats".
+- Never leave a doc that mentions a name you removed or renamed.
