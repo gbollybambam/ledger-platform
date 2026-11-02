@@ -19,13 +19,13 @@ describe('package scripts', () => {
     const scripts = await readScripts();
 
     expect(scripts['client:create']).toBe(
-      'tsx --env-file-if-exists=.env scripts/client-admin.ts create',
+      'tsx scripts/client-admin-launcher.ts create',
     );
     expect(scripts['client:revoke']).toBe(
-      'tsx --env-file-if-exists=.env scripts/client-admin.ts revoke',
+      'tsx scripts/client-admin-launcher.ts revoke',
     );
     expect(scripts['client:list']).toBe(
-      'tsx --env-file-if-exists=.env scripts/client-admin.ts list',
+      'tsx scripts/client-admin-launcher.ts list',
     );
 
     for (const [name, value] of Object.entries(scripts)) {
