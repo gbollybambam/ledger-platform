@@ -1,5 +1,5 @@
 # Feature: F1 Clients, API keys, and scopes
-Status: todo
+Status: done
 
 Goal:
 Every request to the ledger is made by a known client with the right scope. Keys are stored only as hashes. An operator can create, list, and revoke clients. This is built first so that every later endpoint is born protected.
@@ -120,21 +120,21 @@ stderr, and that list and revoke output never contain a plaintext key or a
 hash in hexadecimal or base64 form.
 
 Done when:
-- [ ] All rules in docs/invariants.md still hold
-- [ ] The migration creates `clients` exactly as in RFC-001, and gives `ledger_app` only `SELECT`. A test as `ledger_app` shows `INSERT`, `UPDATE`, and `DELETE` on `clients` fail with permission denied (42501)
-- [ ] Key format is `lk_` followed by 43 base64url characters from `crypto.randomBytes(32)`. Unit tests check the format and that 1,000 keys are all different. `Math.random` is not used
-- [ ] The database stores only the SHA-256 hash and an 8-character prefix. A test reads every column of the client row and finds no plaintext key
-- [ ] `GET /v1/whoami` with a valid key returns 200 and `{ "client_id", "name", "scopes" }`
-- [ ] A missing header, a wrong scheme, an unknown key, and a revoked key all return 401 `unauthorized` with an identical body shape and message. The body does not say which case it was
-- [ ] Revoking a client takes effect on the very next request (no caching). A test revokes a client and calls again
-- [ ] Every non-public route declares `access: 'any-client' | 'ledger:read' | 'ledger:write'`. A test-only route with each ledger scope returns 200 for the matching scope and 403 `forbidden` for the other scope. Test routes are not shipped
-- [ ] `/health` and `/health/ready` stay public
-- [ ] Authentication runs before the body is parsed (an `onRequest`-level hook), and every error uses the standard error body with a `request_id`
-- [ ] The `Authorization` header and the key never appear in logs. A test captures the logs of a successful and a failed request and searches for the key (INV-14)
-- [ ] `npm run client:create -- --name gateway --scopes ledger:read,ledger:write` prints the key once and never again. It rejects unknown scopes and duplicate names. `client:revoke -- --name gateway` revokes. `client:list` prints name, prefix, scopes, status, and never a hash. The tools use `MIGRATION_DATABASE_URL`
-- [ ] Default deny: every request except the two public health routes returns 401 without a valid key, including unknown paths. A route with no access declaration stops the app from starting
-- [ ] The OpenAPI file documents `/v1/whoami` with `bearerAuth`, 401, and 403. `npm run openapi:lint` and the route drift test pass (INV-16)
-- [ ] `npm run lint`, `typecheck`, `format:check`, `test`, and `build` pass. CI is green
+- [x] All rules in docs/invariants.md still hold
+- [x] The migration creates `clients` exactly as in RFC-001, and gives `ledger_app` only `SELECT`. A test as `ledger_app` shows `INSERT`, `UPDATE`, and `DELETE` on `clients` fail with permission denied (42501)
+- [x] Key format is `lk_` followed by 43 base64url characters from `crypto.randomBytes(32)`. Unit tests check the format and that 1,000 keys are all different. `Math.random` is not used
+- [x] The database stores only the SHA-256 hash and an 8-character prefix. A test reads every column of the client row and finds no plaintext key
+- [x] `GET /v1/whoami` with a valid key returns 200 and `{ "client_id", "name", "scopes" }`
+- [x] A missing header, a wrong scheme, an unknown key, and a revoked key all return 401 `unauthorized` with an identical body shape and message. The body does not say which case it was
+- [x] Revoking a client takes effect on the very next request (no caching). A test revokes a client and calls again
+- [x] Every non-public route declares `access: 'any-client' | 'ledger:read' | 'ledger:write'`. A test-only route with each ledger scope returns 200 for the matching scope and 403 `forbidden` for the other scope. Test routes are not shipped
+- [x] `/health` and `/health/ready` stay public
+- [x] Authentication runs before the body is parsed (an `onRequest`-level hook), and every error uses the standard error body with a `request_id`
+- [x] The `Authorization` header and the key never appear in logs. A test captures the logs of a successful and a failed request and searches for the key (INV-14)
+- [x] `npm run client:create -- --name gateway --scopes ledger:read,ledger:write` prints the key once and never again. It rejects unknown scopes and duplicate names. `client:revoke -- --name gateway` revokes. `client:list` prints name, prefix, scopes, status, and never a hash. The tools use `MIGRATION_DATABASE_URL`
+- [x] Default deny: every request except the two public health routes returns 401 without a valid key, including unknown paths. A route with no access declaration stops the app from starting
+- [x] The OpenAPI file documents `/v1/whoami` with `bearerAuth`, 401, and 403. `npm run openapi:lint` and the route drift test pass (INV-16)
+- [x] `npm run lint`, `typecheck`, `format:check`, `test`, and `build` pass. CI is green
 
 Complex parts (CLI execution with extra oversight / Claude escalation if blocked):
 - **Key generation and hashing.** Small, but a flaw here weakens everything. After the code is written, the planner reviews these files before the feature is called done.
