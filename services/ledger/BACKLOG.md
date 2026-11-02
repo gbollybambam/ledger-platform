@@ -20,6 +20,7 @@ Format: `- [feature] what -- why it can wait -- date`
 - [F1] Prevent `client.end()` in `finally` from hiding an original error -- preserve the first failure during cleanup -- 2026-11-01
 - [F1] Document that health probes with a query string receive 401 -- make the exact public health URL contract clear in the runbook -- 2026-11-01
 - [C1] Reduce client-admin real-process smoke startup cost -- the create/list/revoke smoke test dominates suite time -- 2026-11-02
+- [F9] A burst of duplicate requests with the same key holds one pool connection each for up to lock_timeout (5 s). Consider a per-client concurrency limit or an advisory-lock queue in F9 or v1.1.
 
 ## Later ideas
 
