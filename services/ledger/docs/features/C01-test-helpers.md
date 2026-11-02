@@ -1,5 +1,5 @@
 # Feature: C1 Shared test helpers (a chore, before F2)
-Status: todo
+Status: done
 
 ## Goal
 Put the fixture, app, log-capture, and error-check code that F1 repeated in many test files into shared helpers, and make the operator-tool tests run in-process. After this, a new feature's tests are shorter, safer, and faster. **No production behavior changes.**
@@ -52,16 +52,16 @@ export function closeTestDb(): Promise<void>;
 - Change: `docs/features/C01-test-helpers.md` (this file: tick boxes and fill Metrics)
 
 ## Done when
-- [ ] All rules in docs/invariants.md still hold
-- [ ] The helpers exist with the exact signatures above (test: `helpers.test.ts`)
-- [ ] 50 parallel `createTestClient()` calls give 50 different ids, names, and keys, and `remove()` deletes each row (test: `creates unique clients in parallel`)
-- [ ] `withTestClient` removes the client even when the callback throws (test: `cleans up when the callback throws`)
-- [ ] `expectErrorBody` and `expectIdentical401` fail when the body shape or a header is wrong (test: `rejects a wrong error shape`)
-- [ ] No test file contains a fixed client UUID or a hand-written `INSERT INTO clients`
-- [ ] The total test count is not lower than before, and no assertion is weaker (`git diff main...HEAD -- test` reviewed)
-- [ ] `client-admin` logic tests run in-process. Exactly two real-process tests remain, both with `npm run --silent`
-- [ ] Running the whole suite twice in a row passes both times, and a third run with one test forced to fail leaves no leftover rows in `clients`
-- [ ] The suite is faster. Report the time before and after in Metrics
+- [x] All rules in docs/invariants.md still hold
+- [x] The helpers exist with the exact signatures above (test: `helpers.test.ts`)
+- [x] 50 parallel `createTestClient()` calls give 50 different ids, names, and keys, and `remove()` deletes each row (test: `creates unique clients in parallel`)
+- [x] `withTestClient` removes the client even when the callback throws (test: `cleans up when the callback throws`)
+- [x] `expectErrorBody` and `expectIdentical401` fail when the body shape or a header is wrong (test: `rejects a wrong error shape`)
+- [x] No test file contains a fixed client UUID or a hand-written `INSERT INTO clients`
+- [x] The total test count is not lower than before, and no assertion is weaker (`git diff main...HEAD -- test` reviewed)
+- [x] `client-admin` logic tests run in-process. Exactly two real-process tests remain, both with `npm run --silent`
+- [x] Running the whole suite twice in a row passes both times, and a third run with one test forced to fail leaves no leftover rows in `clients`
+- [x] The suite is faster. Report the time before and after in Metrics
 
 ## Test plan
 | Rule | Test name | Sabotage that must make it fail |
@@ -91,10 +91,10 @@ None. The planner does not review this feature. The owner checks the Metrics num
 - `CHANGELOG.md`: one line.
 
 ## Metrics
-- Questions the executor asked:
-- Fix-now findings in review pass 1:
-- Suite time before / after (seconds):
-- Rough minutes: spec check / tests first / build / review fixes:
+- Questions the executor asked: 0
+- Fix-now findings in review pass 1: 0
+- Suite time before / after (seconds): 125.33 / 53.81
+- Rough minutes: spec check / tests first / build / review fixes: not recorded
 
 ## Review log
-- Pass 1: findings, fixed, moved to backlog
+- Pass 1: self-review found no checklist violations; no fixes or backlog items.

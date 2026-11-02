@@ -7,6 +7,7 @@ The versions follow Semantic Versioning. Tags look like `ledger/v0.1.0`. See `..
 
 ### Added
 - F1 client administration, hashed API-key authentication, scopes, and `/v1/whoami`.
+- C1 shared test helpers and in-process client-admin test coverage.
 
 ## [0.1.0] - 2026-10-30
 
