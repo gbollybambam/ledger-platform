@@ -209,7 +209,7 @@ If the CLI is stuck: prompt 6, then send prompt 9 to me.
 
 ## 6. Next feature
 
-Send me prompt 7 ("spec request") for F2, with the files it lists. I write the feature file. Then repeat step 5 from the top. I do not write a feature file before the previous feature is merged, so each spec can use what was learned.
+Send me prompt 7 ("spec request") for the next feature, with the files it lists. (The next ones are C1 and F2: both are already written. After F2 comes F3, accounts.) I write the feature file. Then repeat step 5 from the top. I do not write a feature file before the previous feature is merged, so each spec can use what was learned.
 
 ## 7. Before real money
 

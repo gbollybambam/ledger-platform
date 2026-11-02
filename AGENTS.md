@@ -22,6 +22,8 @@ This system is designed for real money. Correctness and safety come before speed
 | ----------------------------------- | ------------------------------------------------- |
 | Git, commits, PRs, tags             | [CONTRIBUTING.md](CONTRIBUTING.md)                |
 | The work loop for every feature     | `docs/process/feature-loop.md`                    |
+| Past mistakes and the rules from them | `docs/process/lessons-from-f1.md`               |
+| Self-review checklist               | `docs/process/review-checklist.md`                |
 | Prompts for each step               | `docs/process/kickoff-prompts.md`                 |
 | Why the platform is shaped this way | `docs/architecture-assessment.md`, `docs/decisions/` |
 | What must be true before real money | `docs/production-readiness.md`                    |
@@ -31,14 +33,14 @@ This system is designed for real money. Correctness and safety come before speed
 
 1. Use simple words and short sentences when you explain. Explain **why**, not only what.
 2. Work on one feature at a time. Start from its feature file.
-3. Write tests first, from the "done when" rules. Show that they fail for the right reason. Then implement.
+3. Write tests first, from the "done when" rules and the test plan. Show that they fail for the right reason. Then implement. When all rules pass, run the sabotage check and the self-review (`docs/process/review-checklist.md`).
 4. **Never weaken, skip, or delete a test to make it pass.** If you think a test is wrong, stop and explain.
 5. **Never edit** these without asking the owner: invariants, decision records, the roadmap, `AGENTS.md`, CI workflows, or any merged migration.
 6. Do not add features, layers, or abstractions that the feature file does not ask for.
 7. Do not build anything from a later version. Check the service's `docs/versions.md`.
 8. Ask before you add a dependency. Say why it is needed and what else you considered.
 9. Money is never a floating-point number. See the service rules.
-10. If you are unsure, ask one clear question. If you are stuck, use the stuck rule in `docs/process/feature-loop.md`.
+10. Ask all your questions in ONE list, once, and never about anything the feature file already decides. If you are stuck, use the stuck rule in `docs/process/feature-loop.md`.
 
 ## Never
 

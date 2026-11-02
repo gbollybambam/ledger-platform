@@ -44,12 +44,12 @@ See "Not in v1" in `docs/versions.md`. The main ones: pending and available bala
 **`v1.0.0` is reached when every must-have is done.**
 
 - [ ] **M1** Clients and API keys with scopes. Keys are hashed. Operator tool to create and revoke clients. (F1)
-- [ ] **M2** A currency allow-list. (F2)
-- [ ] **M3** Create and read accounts: kind, normal balance, currency, a no-negative flag, an optional external ID. (F2)
-- [ ] **M4** Post a balanced transaction with 2 or more entries in one currency, with an optional `external_ref` and metadata. (F3)
-- [ ] **M5** Entries and transactions are immutable, enforced by the database and by least-privilege roles. (F3)
-- [ ] **M6** Read a balance from cached totals. (F3)
-- [ ] **M7** Idempotent writes with `Idempotency-Key` on every POST. (F4)
+- [ ] **M2** A currency allow-list. (F3)
+- [ ] **M3** Create and read accounts: kind, normal balance, currency, a no-negative flag, an optional external ID. (F3)
+- [ ] **M4** Post a balanced transaction with 2 or more entries in one currency, with an optional `external_ref` and metadata. (F4)
+- [ ] **M5** Entries and transactions are immutable, enforced by the database and by least-privilege roles. (F4)
+- [ ] **M6** Read a balance from cached totals. (F4)
+- [ ] **M7** Idempotent writes with `Idempotency-Key` on every POST. (F2)
 - [ ] **M8** No overdraft under concurrency, no deadlocks, clear errors on lock timeouts. (F5)
 - [ ] **M9** Reverse a transaction once. (F6)
 - [ ] **M10** A `verify` command. (F7)
