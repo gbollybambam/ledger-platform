@@ -93,8 +93,9 @@ None. The planner does not review this feature. The owner checks the Metrics num
 ## Metrics
 - Questions the executor asked: 0
 - Fix-now findings in review pass 1: 0
-- Suite time before / after (seconds): 125.33 / 53.81
+- Suite time before / after (seconds): 125.33 / 41.44
 - Rough minutes: spec check / tests first / build / review fixes: not recorded
 
 ## Review log
 - Pass 1: self-review found no checklist violations; no fixes or backlog items.
+- Pass 2: review found duplicated HTTP assertions in `clients-auth.test.ts` and `errors.test.ts`; replaced them with shared helpers and fixed the helper header type.
