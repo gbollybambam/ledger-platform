@@ -1,20 +1,22 @@
-import { createHash } from 'node:crypto';
-import { Writable } from 'node:stream';
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
+import { Writable } from 'node:stream';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
-import { createTestPool, testUrls } from './helpers/db.js';
+import { testUrls } from './helpers/db.js';
+import { buildTestApp } from './helpers/app.js';
+import { closeTestDb, createTestClient, type TestClient } from './helpers/clients.js';
+import { expectErrorBody, expectIdentical401 } from './helpers/http.js';
 
-const API_KEY = `lk_${'A'.repeat(43)}`;
-const CLIENT_ID = '00000000-0000-0000-0000-000000000010';
-const CLIENT_NAME = 'f1-auth-client';
-const READ_CLIENT_ID = '00000000-0000-0000-0000-000000000011';
-const READ_CLIENT_NAME = 'f1-read-client';
-const READ_API_KEY = `lk_${'B'.repeat(43)}`;
-const WRITE_CLIENT_ID = '00000000-0000-0000-0000-000000000012';
-const WRITE_CLIENT_NAME = 'f1-write-client';
-const WRITE_API_KEY = `lk_${'C'.repeat(43)}`;
+let API_KEY: string;
+let CLIENT_ID: string;
+let CLIENT_NAME: string;
+let READ_API_KEY: string;
+let WRITE_API_KEY: string;
+let primaryClient: TestClient;
+let readClient: TestClient;
+let writeClient: TestClient;
 
 function authHeader(key = API_KEY): string {
   return `Bearer ${key}`;
@@ -24,45 +26,49 @@ describe('F1 client authentication', () => {
   let app: FastifyInstance;
   let pool: pg.Pool;
   let migrator: pg.Client;
-  let logs = '';
-  let logStream: Writable;
+  let testApp: Awaited<ReturnType<typeof buildTestApp>>;
 
   beforeAll(async () => {
-    pool = createTestPool();
+    primaryClient = await createTestClient({ scopes: ['ledger:read'] });
+    readClient = await createTestClient({ scopes: ['ledger:read'] });
+    writeClient = await createTestClient({ scopes: ['ledger:write'] });
+    API_KEY = primaryClient.key;
+    CLIENT_ID = primaryClient.id;
+    CLIENT_NAME = primaryClient.name;
+    READ_API_KEY = readClient.key;
+    WRITE_API_KEY = writeClient.key;
     migrator = new pg.Client({ connectionString: testUrls().migrator });
     await migrator.connect();
-    await migrator.query('DELETE FROM clients WHERE id = ANY($1::uuid[])', [
-      [CLIENT_ID, READ_CLIENT_ID, WRITE_CLIENT_ID],
-    ]);
-    logStream = new Writable({
-      write(chunk: unknown, _encoding: BufferEncoding, callback: (error?: Error | null) => void) {
-        logs += typeof chunk === 'string' ? chunk : String(chunk);
-        callback();
+    testApp = await buildTestApp({
+      logs: true,
+      routes: (candidate) => {
+        candidate.get('/test-only/ledger-write', { config: { access: 'ledger:write' } }, () => ({
+          ok: true,
+        }));
+        candidate.post('/test-only/body', { config: { access: 'any-client' } }, () => ({
+          ok: true,
+        }));
+        candidate.get('/internal/status', { config: { access: 'any-client' } }, () => ({
+          ok: true,
+        }));
       },
     });
-    app = buildApp({
-      pool,
-      logger: { level: 'debug', stream: logStream },
-    });
-    app.get('/test-only/ledger-write', { config: { access: 'ledger:write' } }, () => ({
-      ok: true,
-    }));
-    app.post('/test-only/body', { config: { access: 'any-client' } }, () => ({ ok: true }));
-    app.get('/internal/status', { config: { access: 'any-client' } }, () => ({ ok: true }));
-    await app.ready();
+    pool = testApp.pool;
+    app = testApp.app;
   });
 
   afterAll(async () => {
-    await app.close();
-    await pool.end();
+    await testApp.close();
     await migrator.end();
+    await Promise.all([primaryClient.remove(), readClient.remove(), writeClient.remove()]);
+    await closeTestDb();
   });
 
   it.each([
     ['missing header', undefined],
     ['wrong scheme', 'Basic credentials'],
     ['unknown key', authHeader()],
-    ['prefix alone', authHeader(API_KEY.slice(0, 8))],
+    ['prefix alone', authHeader('lk_')],
   ])('returns the same 401 response for %s', async (_case, authorization) => {
     const response = await app.inject({
       method: 'GET',
@@ -70,14 +76,7 @@ describe('F1 client authentication', () => {
       headers: authorization === undefined ? undefined : { authorization },
     });
 
-    expect(response.statusCode).toBe(401);
-    expect(response.json()).toMatchObject({
-      error: {
-        code: 'unauthorized',
-        message: 'Unauthorized',
-        request_id: response.headers['x-request-id'],
-      },
-    });
+    expectErrorBody(response, { status: 401, code: 'unauthorized', message: 'Unauthorized' });
   });
 
   it('returns the same unauthorized body for missing, malformed, and unknown keys', async () => {
@@ -95,32 +94,7 @@ describe('F1 client authentication', () => {
       }),
     ];
 
-    const bodies = cases.map((response) => {
-      expect(response.statusCode).toBe(401);
-      const body: unknown = JSON.parse(response.body);
-      if (typeof body !== 'object' || body === null || !('error' in body)) {
-        throw new Error('expected an error response');
-      }
-      return body.error;
-    });
-
-    expect(
-      bodies.map((body) => {
-        if (
-          typeof body !== 'object' ||
-          body === null ||
-          !('code' in body) ||
-          !('message' in body)
-        ) {
-          throw new Error('expected an error body');
-        }
-        return { code: body.code, message: body.message };
-      }),
-    ).toEqual([
-      { code: 'unauthorized', message: 'Unauthorized' },
-      { code: 'unauthorized', message: 'Unauthorized' },
-      { code: 'unauthorized', message: 'Unauthorized' },
-    ]);
+    expectIdentical401(cases);
   });
 
   it('keeps health endpoints public', async () => {
@@ -153,7 +127,7 @@ describe('F1 client authentication', () => {
       if (routePath === '/health' || routePath === '/health/ready') {
         continue;
       }
-      const url = routePath!.replace(/:[^/]+/g, '00000000-0000-0000-0000-000000000000');
+      const url = routePath!.replace(/:[^/]+/g, randomUUID());
       const response = await app.inject({ method: method as 'GET' | 'POST', url });
       expect(response.statusCode, route).toBe(401);
     }
@@ -182,31 +156,14 @@ describe('F1 client authentication', () => {
       payload: 'x'.repeat(2_000_000),
     });
 
-    expect(baseline.statusCode).toBe(401);
-    expect(malformed.statusCode).toBe(401);
-    expect(large.statusCode).toBe(401);
-    expect(malformed.headers['content-type']).toBe(baseline.headers['content-type']);
-    expect(large.headers['content-type']).toBe(baseline.headers['content-type']);
-    expect(malformed.headers['www-authenticate']).toBe(baseline.headers['www-authenticate']);
-    expect(large.headers['www-authenticate']).toBe(baseline.headers['www-authenticate']);
-    expect(malformed.json()).toMatchObject({
-      error: { code: 'unauthorized', message: 'Unauthorized' },
-    });
-    expect(large.json()).toMatchObject({
-      error: { code: 'unauthorized', message: 'Unauthorized' },
-    });
+    expectIdentical401([baseline, malformed, large]);
   });
 
   it('returns the standard unauthorized response for malformed URL requests', async () => {
     for (const url of ['/%', '/health/%zz']) {
       const response = await app.inject({ method: 'GET', url });
-      expect(response.statusCode, url).toBe(401);
+      expectErrorBody(response, { status: 401, code: 'unauthorized', message: 'Unauthorized' });
       expect(response.headers['www-authenticate'], url).toBe('Bearer');
-      const body = response.json<{ error: { request_id: string } }>();
-      expect(response.headers['x-request-id'], url).toBe(body.error.request_id);
-      expect(body, url).toMatchObject({
-        error: { code: 'unauthorized', message: 'Unauthorized' },
-      });
       expect(response.body, url).not.toContain(url);
       expect(response.body, url).not.toContain('Error');
       expect(response.body, url).not.toContain('at ');
@@ -235,10 +192,7 @@ describe('F1 client authentication', () => {
       payload: '{"broken"',
     });
 
-    expect(response.statusCode).toBe(401);
-    expect(response.json()).toMatchObject({
-      error: { code: 'unauthorized', request_id: response.headers['x-request-id'] },
-    });
+    expectErrorBody(response, { status: 401, code: 'unauthorized' });
   });
 
   it('protects non-public routes regardless of their path prefix', async () => {
@@ -247,10 +201,7 @@ describe('F1 client authentication', () => {
       url: '/internal/status',
     });
 
-    expect(response.statusCode).toBe(401);
-    expect(response.json()).toMatchObject({
-      error: { code: 'unauthorized', message: 'Unauthorized' },
-    });
+    expectErrorBody(response, { status: 401, code: 'unauthorized', message: 'Unauthorized' });
   });
 
   it('does not include an API key or Authorization header in logs', async () => {
@@ -262,8 +213,8 @@ describe('F1 client authentication', () => {
 
     expect(response.body).not.toContain(API_KEY);
     expect(response.body).not.toContain('Authorization');
-    expect(logs).not.toContain(API_KEY);
-    expect(logs).not.toMatch(/authorization/i);
+    expect(testApp.logs()).not.toContain(API_KEY);
+    expect(testApp.logs()).not.toMatch(/authorization/i);
   });
 });
 
@@ -271,76 +222,39 @@ describe('F1 authentication integration', () => {
   let app: FastifyInstance;
   let pool: pg.Pool;
   let migrator: pg.Client;
-  let logs = '';
-  let logStream: Writable;
+  let testApp: Awaited<ReturnType<typeof buildTestApp>>;
 
   beforeAll(async () => {
-    pool = createTestPool();
+    primaryClient = await createTestClient({ scopes: ['ledger:read'] });
+    readClient = await createTestClient({ scopes: ['ledger:read'] });
+    writeClient = await createTestClient({ scopes: ['ledger:write'] });
+    API_KEY = primaryClient.key;
+    CLIENT_ID = primaryClient.id;
+    CLIENT_NAME = primaryClient.name;
+    READ_API_KEY = readClient.key;
+    WRITE_API_KEY = writeClient.key;
     migrator = new pg.Client({ connectionString: testUrls().migrator });
     await migrator.connect();
-    await migrator.query('DELETE FROM clients WHERE id = ANY($1::uuid[])', [
-      [CLIENT_ID, READ_CLIENT_ID, WRITE_CLIENT_ID],
-    ]);
-    await migrator.query(
-      `INSERT INTO clients
-         (id, name, key_prefix, key_hash, scopes)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [
-        CLIENT_ID,
-        CLIENT_NAME,
-        API_KEY.slice(0, 8),
-        createHash('sha256').update(API_KEY).digest(),
-        ['ledger:read'],
-      ],
-    );
-    await migrator.query(
-      `INSERT INTO clients
-         (id, name, key_prefix, key_hash, scopes)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [
-        READ_CLIENT_ID,
-        READ_CLIENT_NAME,
-        READ_API_KEY.slice(0, 8),
-        createHash('sha256').update(READ_API_KEY).digest(),
-        ['ledger:read'],
-      ],
-    );
-    await migrator.query(
-      `INSERT INTO clients
-         (id, name, key_prefix, key_hash, scopes)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [
-        WRITE_CLIENT_ID,
-        WRITE_CLIENT_NAME,
-        WRITE_API_KEY.slice(0, 8),
-        createHash('sha256').update(WRITE_API_KEY).digest(),
-        ['ledger:write'],
-      ],
-    );
-    logStream = new Writable({
-      write(chunk: unknown, _encoding: BufferEncoding, callback: (error?: Error | null) => void) {
-        logs += typeof chunk === 'string' ? chunk : String(chunk);
-        callback();
+    testApp = await buildTestApp({
+      logs: true,
+      routes: (candidate) => {
+        candidate.get('/test-only/ledger-read', { config: { access: 'ledger:read' } }, () => ({
+          ok: true,
+        }));
+        candidate.get('/test-only/ledger-write', { config: { access: 'ledger:write' } }, () => ({
+          ok: true,
+        }));
       },
     });
-    app = buildApp({ pool, logger: { level: 'debug', stream: logStream } });
-    app.get('/test-only/ledger-read', { config: { access: 'ledger:read' } }, () => ({
-      ok: true,
-    }));
-    app.get('/test-only/ledger-write', { config: { access: 'ledger:write' } }, () => ({
-      ok: true,
-    }));
-    await app.ready();
+    pool = testApp.pool;
+    app = testApp.app;
   });
 
   afterAll(async () => {
-    await app.close();
-    await pool.end();
-    await migrator.query('DELETE FROM clients WHERE id = $1', [CLIENT_ID]);
-    await migrator.query('DELETE FROM clients WHERE id = ANY($1::uuid[])', [
-      [READ_CLIENT_ID, WRITE_CLIENT_ID],
-    ]);
+    await testApp.close();
     await migrator.end();
+    await Promise.all([primaryClient.remove(), readClient.remove(), writeClient.remove()]);
+    await closeTestDb();
   });
 
   it('authenticates a valid key and returns client identity and scopes', async () => {
@@ -405,10 +319,7 @@ describe('F1 authentication integration', () => {
       headers: { authorization: authHeader() },
     });
 
-    expect(response.statusCode).toBe(404);
-    expect(response.json()).toMatchObject({
-      error: { code: 'not_found', message: 'Route not found' },
-    });
+    expectErrorBody(response, { status: 404, code: 'not_found', message: 'Route not found' });
   });
 
   it('uses identical 401 responses for every invalid credential case', async () => {
@@ -439,28 +350,7 @@ describe('F1 authentication integration', () => {
         }),
       );
 
-      const requestIds = new Set<string>();
-      const comparableBodies = cases.map((response) => {
-        expect(response.statusCode).toBe(401);
-        expect(response.headers['content-type']).toContain('application/json');
-        expect(response.headers['www-authenticate']).toBe('Bearer');
-        const body = response.json<{
-          error: { code: string; message: string; request_id: string };
-        }>();
-        expect(body.error.request_id).toMatch(
-          /^[0-9a-f]{8}-[0-9a-f]{4}-[4-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-        );
-        requestIds.add(body.error.request_id);
-        return { code: body.error.code, message: body.error.message };
-      });
-
-      expect(requestIds.size).toBe(cases.length);
-      expect(comparableBodies).toEqual([
-        { code: 'unauthorized', message: 'Unauthorized' },
-        { code: 'unauthorized', message: 'Unauthorized' },
-        { code: 'unauthorized', message: 'Unauthorized' },
-        { code: 'unauthorized', message: 'Unauthorized' },
-      ]);
+      expectIdentical401(cases);
     } finally {
       await migrator.query(
         `UPDATE clients SET status = 'active', revoked_at = NULL WHERE id = $1`,
@@ -502,11 +392,11 @@ describe('F1 authentication integration', () => {
 
       expect(successful.statusCode).toBe(200);
       expect(failed.map((response) => response.statusCode)).toEqual([401, 401, 401, 401]);
-      expect(logs).not.toBe('');
-      expect(logs).not.toMatch(/authorization/i);
-      expect(logs).not.toContain(authHeader());
-      expect(logs).not.toContain('Basic credentials');
-      expect(logs).not.toContain(authHeader('lk_unknown'));
+      expect(testApp.logs()).not.toBe('');
+      expect(testApp.logs()).not.toMatch(/authorization/i);
+      expect(testApp.logs()).not.toContain(authHeader());
+      expect(testApp.logs()).not.toContain('Basic credentials');
+      expect(testApp.logs()).not.toContain(authHeader('lk_unknown'));
     } finally {
       await migrator.query(
         `UPDATE clients SET status = 'active', revoked_at = NULL WHERE id = $1`,
@@ -556,10 +446,7 @@ describe('F1 authentication integration', () => {
       headers: { authorization: authHeader() },
     });
 
-    expect(response.statusCode).toBe(403);
-    expect(response.json()).toMatchObject({
-      error: { code: 'forbidden', request_id: response.headers['x-request-id'] },
-    });
+    expectErrorBody(response, { status: 403, code: 'forbidden' });
   });
 
   it('rejects a revoked key on the next request', async () => {
@@ -581,13 +468,8 @@ describe('F1 authentication integration', () => {
         url: '/v1/whoami',
         headers: { authorization: authHeader() },
       });
-      expect(after.statusCode).toBe(401);
-      expect(after.headers['content-type']).toBe(before.headers['content-type']);
+      expectErrorBody(after, { status: 401, code: 'unauthorized', message: 'Unauthorized' });
       expect(after.headers['www-authenticate']).toBe('Bearer');
-      expect(after.json<{ error: { code: string; message: string } }>().error).toMatchObject({
-        code: 'unauthorized',
-        message: 'Unauthorized',
-      });
     } finally {
       await migrator.query(
         `UPDATE clients SET status = 'active', revoked_at = NULL WHERE id = $1`,

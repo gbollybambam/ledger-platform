@@ -19,6 +19,7 @@ Format: `- [feature] what -- why it can wait -- date`
 - [F1] Run most client-admin cases in-process with injected writers, keeping one or two real npm smoke tests -- reduce subprocess cost while preserving CLI coverage -- 2026-11-01
 - [F1] Prevent `client.end()` in `finally` from hiding an original error -- preserve the first failure during cleanup -- 2026-11-01
 - [F1] Document that health probes with a query string receive 401 -- make the exact public health URL contract clear in the runbook -- 2026-11-01
+- [C1] Reduce client-admin real-process smoke startup cost -- the create/list/revoke smoke test dominates suite time -- 2026-11-02
 
 ## Later ideas
 

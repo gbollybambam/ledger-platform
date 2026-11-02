@@ -1,11 +1,9 @@
 import { readFileSync } from 'node:fs';
 import SwaggerParser from '@apidevtools/swagger-parser';
 import type { FastifyInstance } from 'fastify';
-import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
-import { buildApp } from '../src/app.js';
-import { createTestPool } from './helpers/db.js';
+import { buildTestApp } from './helpers/app.js';
 
 const SPEC_FILE = 'openapi/ledger.v1.yaml';
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const;
@@ -30,19 +28,17 @@ function specOperations(spec: Spec) {
 }
 
 describe('OpenAPI contract', () => {
-  let pool: Pool;
   let app: FastifyInstance;
+  let testApp: Awaited<ReturnType<typeof buildTestApp>>;
   const spec = parse(readFileSync(SPEC_FILE, 'utf8')) as Spec;
 
   beforeAll(async () => {
-    pool = createTestPool();
-    app = buildApp({ pool });
-    await app.ready();
+    testApp = await buildTestApp();
+    app = testApp.app;
   });
 
   afterAll(async () => {
-    await app.close();
-    await pool.end();
+    await testApp.close();
   });
 
   it('is a valid OpenAPI document', async () => {

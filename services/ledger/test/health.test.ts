@@ -1,23 +1,20 @@
 import type { FastifyInstance } from 'fastify';
-import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { createPool } from '../src/db/pool.js';
-import { createTestPool } from './helpers/db.js';
+import { buildTestApp } from './helpers/app.js';
 
 describe('health endpoints (real Postgres)', () => {
-  let pool: Pool;
   let app: FastifyInstance;
+  let testApp: Awaited<ReturnType<typeof buildTestApp>>;
 
   beforeAll(async () => {
-    pool = createTestPool();
-    app = buildApp({ pool });
-    await app.ready();
+    testApp = await buildTestApp();
+    app = testApp.app;
   });
 
   afterAll(async () => {
-    await app.close();
-    await pool.end();
+    await testApp.close();
   });
 
   it('GET /health returns ok', async () => {
