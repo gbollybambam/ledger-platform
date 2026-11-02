@@ -18,15 +18,9 @@ describe('package scripts', () => {
   it('keeps client administration scripts exact and portable', async () => {
     const scripts = await readScripts();
 
-    expect(scripts['client:create']).toBe(
-      'tsx scripts/client-admin-launcher.ts create',
-    );
-    expect(scripts['client:revoke']).toBe(
-      'tsx scripts/client-admin-launcher.ts revoke',
-    );
-    expect(scripts['client:list']).toBe(
-      'tsx scripts/client-admin-launcher.ts list',
-    );
+    expect(scripts['client:create']).toBe('tsx scripts/client-admin-launcher.ts create');
+    expect(scripts['client:revoke']).toBe('tsx scripts/client-admin-launcher.ts revoke');
+    expect(scripts['client:list']).toBe('tsx scripts/client-admin-launcher.ts list');
 
     for (const [name, value] of Object.entries(scripts)) {
       expect(value, `${name} must not contain a Windows path`).not.toMatch(/[A-Za-z]:\\|\\/);
