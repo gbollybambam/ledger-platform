@@ -185,8 +185,7 @@ Hash test vectors:
 | R9 atomic with effect | `commits the effect and the key together or not at all` | Run the handler's SQL on a different connection |
 | R10 client scope | `scopes keys to the client` | Look up by `key` only, without `client_id` |
 | R11 auth first | `authenticates before touching idempotency` | Make the hook skip this route |
-| R12 final response | `protects stored responses` | Remove the freeze trigger |
-| R12 no response | `refuses to commit a key without a response` (as the owner role) | Remove the deferred trigger |
+| R12 database protection | `protects stored responses`; `refuses to commit a key without a response` (as the owner role) | Remove the freeze trigger or the deferred trigger |
 | R13 canonical | `canonical JSON: <each vector and edge case>` | Stop sorting keys |
 | R14 busy | `answers 503 busy when the key row is locked too long` | Remove the `55P03` mapping |
 | R15 hidden errors | `hides unknown database errors` | Return `error.message` in the body |
