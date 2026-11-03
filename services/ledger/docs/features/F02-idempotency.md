@@ -178,8 +178,8 @@ Hash test vectors:
 | R2 different body | `refuses the same key with a different body` | Remove the hash comparison |
 | R3 different URL | `refuses the same key on a different URL` | Leave the URL out of the hash |
 | R4 key format | `rejects a missing or invalid Idempotency-Key` (one case per row: missing, empty, 7 chars, 129 chars, bad character, two headers) | Loosen the regex to `{1,128}` |
-| R5 parallel same | `applies 50 parallel identical requests exactly once` | Drop `ON CONFLICT` or commit the key before running the handler |
-| R6 parallel different | `lets exactly one body win when the same key is used with different bodies` | Remove the hash comparison |
+| R5 parallel same | `applies 50 parallel identical requests exactly once` using the normal pool size of 10, without any `timeout exceeded when trying to connect` error | Drop `ON CONFLICT`, commit the key before running the handler, or enlarge the pool for the test |
+| R6 parallel different | `lets exactly one body win when the same key is used with different bodies` using the normal pool size of 10, without any `timeout exceeded when trying to connect` error | Remove the hash comparison or enlarge the pool for the test |
 | R7 failure leaves no key | `does not store a failed request` | Commit the key row before the handler runs |
 | R8 unexpected error | `rolls back on an unexpected error` | Catch the error and commit |
 | R9 atomic with effect | `commits the effect and the key together or not at all` | Run the handler's SQL on a different connection |
@@ -195,6 +195,7 @@ Hash test vectors:
 | R18 privileges | `grants only the needed privileges` | `GRANT ALL` in the migration |
 | R19 checks | `enforces key and status formats in the database` | Loosen a `CHECK` |
 | R20 no leaks | `never leaks a connection` (idle plus used connections return to the starting count after 100 mixed requests) | Remove `release()` in one path |
+| Connection ownership | `uses a single connection per request` (while one request is inside `run`, `pool.totalCount - pool.idleCount` increases by exactly 1) | Run the effect through a different connection or acquire more than one connection |
 | Misuse | `refuses a non-POST request or a missing client` | Remove the guard |
 
 ## Edge cases that must be tested
@@ -203,6 +204,9 @@ Hash test vectors:
 - Same key, same body, different query string: 409.
 - Two clients, same key, at the same moment: both succeed.
 - The first request fails with a lock timeout while the second waits: the second does not hang forever (it sees the lock timeout too, then 503).
+- The R5 and R6 parallel tests use the normal pool size of 10; they must not enlarge the pool and must not produce `timeout exceeded when trying to connect`.
+- The test-only route runs all SQL through `tx`.
+- `uses a single connection per request`: while one request is inside `run`, `pool.totalCount - pool.idleCount` increases by exactly 1.
 - A replay after the client's scope changed to read-only: 403 (authorization still applies).
 - `runIdempotent` with a `GET` request or no client: throws, and `run` is not called.
 - 100 sequential requests alternating success and failure: the pool returns to its starting size.

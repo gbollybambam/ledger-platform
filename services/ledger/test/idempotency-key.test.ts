@@ -29,4 +29,10 @@ describe('Idempotency-Key parsing', () => {
       expect(parseIdempotencyKey(header)).toBe(header);
     },
   );
+
+  it.each([' ', '/', 'é'])('rejects disallowed characters: %s', (character) => {
+    expect(() => parseIdempotencyKey(`abcdefg${character}`)).toThrow(
+      'Idempotency-Key header is not valid',
+    );
+  });
 });

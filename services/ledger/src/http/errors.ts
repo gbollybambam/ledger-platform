@@ -1,4 +1,5 @@
 import type { FastifyError, FastifyInstance } from 'fastify';
+import { mapDbError } from './db-errors.js';
 
 /** The one error format for the whole API (see docs/rfc-001.md). */
 export function errorBody(code: string, message: string, requestId: string) {
@@ -26,7 +27,18 @@ export function registerErrorHandling(app: FastifyInstance): void {
       if (error.statusCode === 401) {
         reply.header('www-authenticate', 'Bearer');
       }
+      if (error.statusCode === 503) {
+        reply.header('retry-after', '1');
+      }
       return reply.status(error.statusCode).send(errorBody(error.code, error.message, request.id));
+    }
+
+    const mapped = mapDbError(error);
+    if (mapped !== undefined) {
+      reply.header('retry-after', '1');
+      return reply
+        .status(mapped.statusCode)
+        .send(errorBody(mapped.code, mapped.message, request.id));
     }
 
     const status = error.statusCode ?? 500;

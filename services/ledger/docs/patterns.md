@@ -76,3 +76,21 @@ app.get('/v1/accounts/:id', { config: { access: 'ledger:read' } }, handler);
 
 - Tests first, in their own commit. Then one commit per rule or step.
 - Read `git diff` before every commit. No stray paths, no debug code.
+
+## 10. Writing an idempotent endpoint
+
+```ts
+const key = parseIdempotencyKey(request.headers['idempotency-key']);
+const outcome = await withIdempotency({
+  pool,
+  client: request.client!,
+  key,
+  hash: requestHash({ method: request.method, url: request.raw.url!, body: request.body ?? null }),
+  run: (tx) => postWith(tx, request.body),
+});
+if (outcome.replayed) reply.header('idempotent-replayed', 'true');
+return reply.status(outcome.status).send(outcome.body);
+```
+
+The callback must use the supplied `tx` for every SQL statement. The idempotency row,
+the effect, and the stored response commit together.
