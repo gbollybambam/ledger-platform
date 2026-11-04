@@ -2,7 +2,7 @@
 
 A double-entry ledger service. It is the source of truth for balances. It is called over HTTP by other services.
 
-**Status:** Phase 2 (skeleton) is built. Features start with F1 (`docs/roadmap.md`).
+**Status:** Phase 3 underway. F1 clients and API-key auth are done (`docs/roadmap.md`).
 
 **Designed for real money. A passing build is not a launch approval.** See `../../docs/production-readiness.md`.
 
