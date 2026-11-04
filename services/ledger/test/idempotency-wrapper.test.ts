@@ -265,37 +265,92 @@ describe('idempotency wrapper', () => {
     const lockPool = new pg.Pool({
       connectionString: testUrls().app,
       max: 3,
+      lock_timeout: 300,
+      statement_timeout: 1000,
     });
     const holder = await lockPool.connect();
+    const key = `locked-${randomUUID().slice(0, 8)}`;
+    const lockedApp = await buildTestApp({
+      pool: lockPool,
+      routes: (candidate) => {
+        candidate.post(routePath, { config: { access: 'ledger:write' } }, (request, reply) =>
+          runIdempotent(request, reply, lockPool, async () => ({
+            status: 201,
+            body: { ok: true },
+          })),
+        );
+      },
+    });
     try {
       await holder.query('BEGIN');
       await holder.query(
         `INSERT INTO idempotency_keys (client_id, key, request_hash)
          VALUES ($1, $2, $3)`,
-        [client.id, 'locked-key', 'a'.repeat(64)],
+        [client.id, key, 'a'.repeat(64)],
       );
-      const configured = await lockPool.connect();
-      await configured.query("SET lock_timeout = '300ms'; SET statement_timeout = '1000ms'");
-      configured.release();
-      await expect(
-        withIdempotency({
-          pool: lockPool,
-          client,
-          key: 'locked-key',
-          hash: 'a'.repeat(64),
-          run: async () => {
-            await Promise.resolve();
-            return { status: 201, body: { ok: true } };
-          },
-        }),
-      ).rejects.toMatchObject({
-        statusCode: 503,
-        code: 'busy',
+      const response = await lockedApp.app.inject({
+        method: 'POST',
+        url: routePath,
+        headers: {
+          authorization: client.authorization,
+          'content-type': 'application/json',
+          'idempotency-key': key,
+        },
+        payload: '{}',
       });
+      expectErrorBody(response, {
+        status: 503,
+        code: 'busy',
+        message: 'The service is busy. Retry with the same Idempotency-Key.',
+      });
+      expect(response.headers['retry-after']).toBe('1');
     } finally {
+      await lockedApp.close();
       await holder.query('ROLLBACK').catch(() => undefined);
       holder.release();
       await lockPool.end();
+    }
+  });
+
+  it('hides an unknown database error over HTTP', async () => {
+    const key = `db-error-${randomUUID().slice(0, 8)}`;
+    const errorApp = await buildTestApp({
+      logs: true,
+      routes: (candidate) => {
+        candidate.post(routePath, { config: { access: 'ledger:write' } }, (request, reply) =>
+          runIdempotent(request, reply, errorApp.pool, async (tx) => {
+            await tx.query('SELECT 1 / 0');
+            return { status: 201, body: { ok: true } };
+          }),
+        );
+      },
+    });
+    try {
+      const response = await errorApp.app.inject({
+        method: 'POST',
+        url: routePath,
+        headers: {
+          authorization: client.authorization,
+          'content-type': 'application/json',
+          'idempotency-key': key,
+        },
+        payload: '{}',
+      });
+      expectErrorBody(response, {
+        status: 500,
+        code: 'internal_error',
+        message: 'Something went wrong',
+      });
+      expect(response.body).not.toContain('division');
+      expect(response.body).not.toContain('SELECT');
+      const rows = await errorApp.pool.query(
+        'SELECT count(*)::int AS count FROM idempotency_keys WHERE client_id = $1 AND key = $2',
+        [client.id, key],
+      );
+      expect(rows.rows[0]?.count).toBe(0);
+      expect(errorApp.logs()).toContain('division by zero');
+    } finally {
+      await errorApp.close();
     }
   });
 
