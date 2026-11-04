@@ -4,7 +4,7 @@ A platform for handling money, built as separate services:
 
 | Service | Purpose | Stack | Status |
 | ------- | ------- | ----- | ------ |
-| [`services/ledger`](services/ledger) | Double-entry ledger: the source of truth for balances | Node.js, TypeScript, PostgreSQL | Phase 2 done. Phase 3 (features) next |
+| [`services/ledger`](services/ledger) | Double-entry ledger: the source of truth for balances | Node.js, TypeScript, PostgreSQL | Phase 3 underway. F1 clients and API-key auth done |
 | `services/gateway` | Payment provider integration | not decided yet | not started |
 | `services/recon` | Reconciliation with provider statements | not decided yet | not started |
 

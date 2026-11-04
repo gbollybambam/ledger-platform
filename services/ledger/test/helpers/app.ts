@@ -14,9 +14,11 @@ export interface TestApp {
 export async function buildTestApp(_options?: {
   routes?: (app: FastifyInstance) => void;
   logs?: boolean;
+  pool?: Pool;
 }): Promise<TestApp> {
   const options = _options ?? {};
-  const pool = createTestPool();
+  const pool = options.pool ?? createTestPool();
+  const ownsPool = options.pool === undefined;
   const captured = options.logs === true ? captureLogs() : undefined;
   const app = buildApp({
     pool,
@@ -31,7 +33,9 @@ export async function buildTestApp(_options?: {
     logs: () => captured?.text() ?? '',
     close: async () => {
       await app.close();
-      await pool.end();
+      if (ownsPool) {
+        await pool.end();
+      }
     },
   };
 }

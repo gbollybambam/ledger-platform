@@ -116,6 +116,16 @@ components:
       schema:
         type: string
         format: uuid
+    IdempotentReplayed:
+      description: This response was replayed from the stored idempotent result.
+      schema:
+        type: string
+        enum: ['true']
+    RetryAfter:
+      description: Retry the request after this many seconds.
+      schema:
+        type: integer
+        enum: [1]
   parameters:
     IdempotencyKey:
       name: Idempotency-Key
@@ -128,6 +138,7 @@ components:
         type: string
         minLength: 8
         maxLength: 128
+        pattern: '^[A-Za-z0-9._:-]{8,128}$'
   schemas:
     Amount:
       type: string
@@ -183,13 +194,22 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     Conflict:
-      description: The request conflicts with the current state.
+      description: The request conflicts with the current state, including idempotency_key_reused.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
     Unprocessable:
       description: The request is valid, but a business rule refuses it.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Busy:
+      description: The request could not complete because the service was busy.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
       content:
         application/json:
           schema:

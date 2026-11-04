@@ -10,6 +10,7 @@ export interface TestClient {
   key: string;
   scopes: Scope[];
   authorization: string;
+  setScopes(scopes: Scope[]): Promise<void>;
   revoke(): Promise<void>;
   remove(): Promise<void>;
 }
@@ -40,6 +41,10 @@ async function getMigrator(): Promise<pg.Client> {
 
 function randomTestName(): string {
   return `t-${randomBytes(4).toString('hex')}`;
+}
+
+export function uniqueKey(): string {
+  return `f2-${randomUUID().replaceAll('-', '')}`;
 }
 
 async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(
@@ -75,6 +80,9 @@ export async function createTestClient(options?: {
     key,
     scopes,
     authorization: `Bearer ${key}`,
+    setScopes: async (nextScopes) => {
+      await query('UPDATE clients SET scopes = $2 WHERE id = $1', [id, nextScopes]);
+    },
     revoke: async () => {
       await query(
         `UPDATE clients
@@ -84,6 +92,7 @@ export async function createTestClient(options?: {
       );
     },
     remove: async () => {
+      await query('DELETE FROM idempotency_keys WHERE client_id = $1', [id]);
       await query('DELETE FROM clients WHERE id = $1', [id]);
     },
   };

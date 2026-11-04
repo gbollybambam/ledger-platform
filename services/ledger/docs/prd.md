@@ -43,7 +43,7 @@ See "Not in v1" in `docs/versions.md`. The main ones: pending and available bala
 
 **`v1.0.0` is reached when every must-have is done.**
 
-- [ ] **M1** Clients and API keys with scopes. Keys are hashed. Operator tool to create and revoke clients. (F1)
+- [x] **M1** Clients and API keys with scopes. Keys are hashed. Operator tool to create and revoke clients. (F1)
 - [ ] **M2** A currency allow-list. (F3)
 - [ ] **M3** Create and read accounts: kind, normal balance, currency, a no-negative flag, an optional external ID. (F3)
 - [ ] **M4** Post a balanced transaction with 2 or more entries in one currency, with an optional `external_ref` and metadata. (F4)

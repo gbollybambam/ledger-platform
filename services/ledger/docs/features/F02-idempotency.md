@@ -154,21 +154,21 @@ Hash test vectors:
 - Change: `docs/patterns.md` (add "Writing an idempotent endpoint", with a 10-line example), `docs/rfc-001.md` (one note: the table gets `transaction_id` in F4), `CHANGELOG.md`, this file
 
 ## Done when
-- [ ] All rules in docs/invariants.md still hold
-- [ ] The migration is exactly the SQL above, and the app role has only the stated privileges (tests R12, R18, R19)
-- [ ] The same request with the same key from the same client runs the handler once and replays the first status and body with `Idempotent-Replayed: true` (R1)
-- [ ] The same key with a different body or a different URL gives 409 `idempotency_key_reused` and changes nothing (R2, R3)
-- [ ] A missing or invalid key gives 400 and writes nothing, for every case in the table (R4)
-- [ ] 50 identical requests in parallel apply the effect exactly once, and all 50 replies have the same status and body (R5)
-- [ ] The same key used in parallel with two different bodies applies exactly one of them, and nothing returns a 5xx (R6)
-- [ ] A failed request (422, a thrown error, or a failure after the effect) leaves no key and no effect, and a retry with the same key can succeed (R7, R8, R9)
-- [ ] Keys are scoped to the client (R10)
-- [ ] Authentication happens first, and a revoked client cannot replay (R11)
-- [ ] A stored response cannot change or be deleted, and a key cannot commit without a response (R12)
-- [ ] Canonical JSON and the request hash pass every vector above and the edge cases (R13)
-- [ ] A lock timeout gives 503 `busy` with `Retry-After`, and unknown database errors give a generic 500 (R14, R15)
-- [ ] No connection leaks after 100 requests that include every kind of failure (R20)
-- [ ] The OpenAPI file documents the contract and `npm run openapi:lint` passes (R17)
+- [x] All rules in docs/invariants.md still hold
+- [x] The migration is exactly the SQL above, and the app role has only the stated privileges (tests R12, R18, R19)
+- [x] The same request with the same key from the same client runs the handler once and replays the first status and body with `Idempotent-Replayed: true` (R1)
+- [x] The same key with a different body or a different URL gives 409 `idempotency_key_reused` and changes nothing (R2, R3)
+- [x] A missing or invalid key gives 400 and writes nothing, for every case in the table (R4)
+- [x] 50 identical requests in parallel apply the effect exactly once, and all 50 replies have the same status and body (R5)
+- [x] The same key used in parallel with two different bodies applies exactly one of them, and nothing returns a 5xx (R6)
+- [x] A failed request (422, a thrown error, or a failure after the effect) leaves no key and no effect, and a retry with the same key can succeed (R7, R8, R9)
+- [x] Keys are scoped to the client (R10)
+- [x] Authentication happens first, and a revoked client cannot replay (R11)
+- [x] A stored response cannot change or be deleted, and a key cannot commit without a response (R12)
+- [x] Canonical JSON and the request hash pass every vector above and the edge cases (R13)
+- [x] A lock timeout gives 503 `busy` with `Retry-After`, and unknown database errors give a generic 500 (R14, R15)
+- [x] No connection leaks after 100 requests that include every kind of failure (R20)
+- [x] The OpenAPI file documents the contract and `npm run openapi:lint` passes (R17)
 - [ ] `npm run lint`, `format:check`, `typecheck`, `openapi:lint`, `test`, and `build` pass. CI is green
 
 ## Test plan
@@ -178,8 +178,8 @@ Hash test vectors:
 | R2 different body | `refuses the same key with a different body` | Remove the hash comparison |
 | R3 different URL | `refuses the same key on a different URL` | Leave the URL out of the hash |
 | R4 key format | `rejects a missing or invalid Idempotency-Key` (one case per row: missing, empty, 7 chars, 129 chars, bad character, two headers) | Loosen the regex to `{1,128}` |
-| R5 parallel same | `applies 50 parallel identical requests exactly once` | Drop `ON CONFLICT` or commit the key before running the handler |
-| R6 parallel different | `lets exactly one body win when the same key is used with different bodies` | Remove the hash comparison |
+| R5 parallel same | `applies 50 parallel identical requests exactly once` using the normal pool size of 10, without any `timeout exceeded when trying to connect` error | Drop `ON CONFLICT`, commit the key before running the handler, or enlarge the pool for the test |
+| R6 parallel different | `lets exactly one body win when the same key is used with different bodies` using the normal pool size of 10, without any `timeout exceeded when trying to connect` error | Remove the hash comparison or enlarge the pool for the test |
 | R7 failure leaves no key | `does not store a failed request` | Commit the key row before the handler runs |
 | R8 unexpected error | `rolls back on an unexpected error` | Catch the error and commit |
 | R9 atomic with effect | `commits the effect and the key together or not at all` | Run the handler's SQL on a different connection |
@@ -195,6 +195,7 @@ Hash test vectors:
 | R18 privileges | `grants only the needed privileges` | `GRANT ALL` in the migration |
 | R19 checks | `enforces key and status formats in the database` | Loosen a `CHECK` |
 | R20 no leaks | `never leaks a connection` (idle plus used connections return to the starting count after 100 mixed requests) | Remove `release()` in one path |
+| Connection ownership | `uses a single connection per request` (while one request is inside `run`, `pool.totalCount - pool.idleCount` increases by exactly 1) | Run the effect through a different connection or acquire more than one connection |
 | Misuse | `refuses a non-POST request or a missing client` | Remove the guard |
 
 ## Edge cases that must be tested
@@ -203,6 +204,9 @@ Hash test vectors:
 - Same key, same body, different query string: 409.
 - Two clients, same key, at the same moment: both succeed.
 - The first request fails with a lock timeout while the second waits: the second does not hang forever (it sees the lock timeout too, then 503).
+- The R5 and R6 parallel tests use the normal pool size of 10; they must not enlarge the pool and must not produce `timeout exceeded when trying to connect`.
+- The test-only route runs all SQL through `tx`.
+- `uses a single connection per request`: while one request is inside `run`, `pool.totalCount - pool.idleCount` increases by exactly 1.
 - A replay after the client's scope changed to read-only: 403 (authorization still applies).
 - `runIdempotent` with a `GET` request or no client: throws, and `run` is not called.
 - 100 sequential requests alternating success and failure: the pool returns to its starting size.
@@ -248,10 +252,11 @@ Why this is safe under concurrency (the executor must keep this reasoning in a c
 - `docs/roadmap.md` is edited by the owner, not the executor.
 
 ## Metrics
-- Questions the executor asked:
-- Fix-now findings in review pass 1:
-- Fix-now findings in review pass 2:
-- Rough minutes: spec check / tests first / build / review fixes:
+- Questions the executor asked: none
+- Fix-now findings in review pass 1: 2 weak assertions (R5 and R10); hardened, plus the requested follow-up fixes
+- Fix-now findings in review pass 2: not run
+- Rough minutes: spec check 10 / tests first 20 / build 5 / review fixes 90
+- `npm test` duration: 86.68 seconds; 18 test files; 169 tests passed
 
 ## Review log
 - Pass 1: findings, fixed, moved to backlog

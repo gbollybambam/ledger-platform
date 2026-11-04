@@ -17,7 +17,7 @@ The process for each feature is in `docs/process/feature-loop.md` at the reposit
 | # | Feature | PRD | Status | Feature file | Tag |
 | - | ------- | --- | ------ | ------------ | --- |
 | C1 | Shared test helpers (a chore, before F2) | M14 | todo | `docs/features/C01-test-helpers.md` | |
-| F1 | Clients, API keys, and scopes | M1 M14 | in progress | `docs/features/F01-clients-auth.md` | |
+| F1 | Clients, API keys, and scopes | M1 M14 | done | `docs/features/F01-clients-auth.md` | |
 | F2 | Idempotency framework (built before any real POST) | M7 | todo | `docs/features/F02-idempotency.md` | |
 | F3 | Currencies and accounts | M2 M3 | todo | `docs/features/F03-accounts.md` | |
 | F4 | Transactions core: balanced, immutable, cached totals, balance read | M4 M5 M6 | todo | `docs/features/F04-transactions-core.md` | |
