@@ -18,26 +18,39 @@ import { withIdempotency } from '../src/idempotency/with-idempotency.js';
 
 const routePath = '/v1/test-only/idempotent';
 const validKey = 'abcdefgh';
+let owner: pg.Client;
+const effectsTable = `idempotency_effects_${randomUUID().replaceAll('-', '')}`;
+
+async function countEffects(pool: pg.Pool, key?: string): Promise<number> {
+  const result = await pool.query<{ count: string }>(
+    key === undefined
+      ? `SELECT count(*)::text AS count FROM ${effectsTable}`
+      : `SELECT count(*)::text AS count FROM ${effectsTable} WHERE request_key = $1`,
+    key === undefined ? [] : [key],
+  );
+  return Number(result.rows[0]?.count ?? 0);
+}
+
+beforeAll(async () => {
+  owner = new pg.Client({ connectionString: testUrls().migrator });
+  await owner.connect();
+  await owner.query(
+    `CREATE TABLE ${effectsTable} (
+       id bigserial PRIMARY KEY,
+       request_key text NOT NULL,
+       body jsonb NOT NULL
+     )`,
+  );
+  await owner.query(`GRANT INSERT, SELECT ON ${effectsTable} TO ledger_app`);
+  await owner.query(`GRANT USAGE, SELECT ON SEQUENCE ${effectsTable}_id_seq TO ledger_app`);
+});
 
 describe('idempotency wrapper', () => {
   let testApp: Awaited<ReturnType<typeof buildTestApp>>;
   let app: FastifyInstance;
   let client: TestClient;
-  let owner: pg.Client;
-  const effectsTable = `idempotency_effects_${randomUUID().replaceAll('-', '')}`;
 
   beforeAll(async () => {
-    owner = new pg.Client({ connectionString: testUrls().migrator });
-    await owner.connect();
-    await owner.query(
-      `CREATE TABLE ${effectsTable} (
-         id bigserial PRIMARY KEY,
-         request_key text NOT NULL,
-         body jsonb NOT NULL
-       )`,
-    );
-    await owner.query(`GRANT INSERT, SELECT ON ${effectsTable} TO ledger_app`);
-    await owner.query(`GRANT USAGE, SELECT ON SEQUENCE ${effectsTable}_id_seq TO ledger_app`);
     client = await createTestClient({ scopes: ['ledger:write'] });
     testApp = await buildTestApp({
       routes: (candidate) => {
@@ -87,9 +100,6 @@ describe('idempotency wrapper', () => {
   afterAll(async () => {
     await testApp.close();
     await client.remove();
-    await owner.query(`DROP TABLE ${effectsTable}`);
-    await owner.end();
-    await closeTestDb();
   });
 
   async function request(body?: object | null, key = validKey, url = routePath) {
@@ -106,13 +116,7 @@ describe('idempotency wrapper', () => {
   }
 
   async function effectCount(key?: string): Promise<number> {
-    const result = await testApp.pool.query<{ count: string }>(
-      key === undefined
-        ? `SELECT count(*)::text AS count FROM ${effectsTable}`
-        : `SELECT count(*)::text AS count FROM ${effectsTable} WHERE request_key = $1`,
-      key === undefined ? [] : [key],
-    );
-    return Number(result.rows[0]?.count ?? 0);
+    return countEffects(testApp.pool, key);
   }
 
   async function keyCount(key: string): Promise<number> {
@@ -333,6 +337,7 @@ describe('idempotency wrapper', () => {
 
 describe('idempotency route authentication and misuse', () => {
   it('authenticates before touching idempotency', async () => {
+    const key = `unauth-${randomUUID().slice(0, 8)}`;
     const testApp = await buildTestApp({
       routes: (candidate) => {
         candidate.post(routePath, { config: { access: 'ledger:write' } }, (request, reply) =>
@@ -347,13 +352,15 @@ describe('idempotency route authentication and misuse', () => {
       const response = await testApp.app.inject({
         method: 'POST',
         url: routePath,
-        headers: { 'idempotency-key': validKey },
+        headers: { 'idempotency-key': key },
         payload: '{}',
       });
       expectErrorBody(response, { status: 401, code: 'unauthorized' });
-      await expect(
-        testApp.pool.query('SELECT count(*) FROM idempotency_keys'),
-      ).resolves.toBeDefined();
+      const rows = await testApp.pool.query(
+        'SELECT count(*)::int AS count FROM idempotency_keys WHERE key = $1',
+        [key],
+      );
+      expect(rows.rows[0]?.count).toBe(0);
     } finally {
       await testApp.close();
     }
@@ -361,12 +368,18 @@ describe('idempotency route authentication and misuse', () => {
 
   it('forbids a replay after the client lost its scope', async () => {
     const scopeChangingClient = await createTestClient({ scopes: ['ledger:write'] });
+    const key = `scope-${randomUUID().slice(0, 8)}`;
     const testApp = await buildTestApp({
       routes: (candidate) => {
         candidate.post(routePath, { config: { access: 'ledger:write' } }, (request, reply) =>
-          runIdempotent(request, reply, testApp.pool, () =>
-            Promise.resolve({ status: 201, body: { ok: true } }),
-          ),
+          runIdempotent(request, reply, testApp.pool, async (tx) => {
+            await tx.query(
+              `INSERT INTO ${effectsTable} (request_key, body)
+               VALUES ($1, '{}'::jsonb)`,
+              [request.headers['idempotency-key']],
+            );
+            return { status: 201, body: { ok: true } };
+          }),
         );
       },
     });
@@ -377,7 +390,7 @@ describe('idempotency route authentication and misuse', () => {
         headers: {
           authorization: scopeChangingClient.authorization,
           'content-type': 'application/json',
-          'idempotency-key': validKey,
+          'idempotency-key': key,
         },
         payload: '{}',
       });
@@ -389,17 +402,72 @@ describe('idempotency route authentication and misuse', () => {
         headers: {
           authorization: scopeChangingClient.authorization,
           'content-type': 'application/json',
-          'idempotency-key': validKey,
+          'idempotency-key': key,
         },
         payload: '{}',
       });
       expectErrorBody(replay, { status: 403, code: 'forbidden' });
-      await expect(
-        testApp.pool.query('SELECT count(*) FROM idempotency_keys'),
-      ).resolves.toBeDefined();
+      const keyRows = await testApp.pool.query(
+        `SELECT count(*)::int AS count
+           FROM idempotency_keys
+          WHERE client_id = $1 AND key = $2`,
+        [scopeChangingClient.id, key],
+      );
+      expect(keyRows.rows[0]?.count).toBe(1);
+      expect(await countEffects(testApp.pool, key)).toBe(1);
     } finally {
       await testApp.close();
       await scopeChangingClient.remove();
+    }
+  });
+
+  it('refuses a replay after the client was revoked', async () => {
+    const revokedClient = await createTestClient({ scopes: ['ledger:write'] });
+    const key = `revoked-${randomUUID().slice(0, 8)}`;
+    const testApp = await buildTestApp({
+      routes: (candidate) => {
+        candidate.post(routePath, { config: { access: 'ledger:write' } }, (request, reply) =>
+          runIdempotent(request, reply, testApp.pool, async (tx) => {
+            await tx.query(
+              `INSERT INTO ${effectsTable} (request_key, body)
+               VALUES ($1, '{}'::jsonb)`,
+              [request.headers['idempotency-key']],
+            );
+            return { status: 201, body: { ok: true } };
+          }),
+        );
+      },
+    });
+    try {
+      const first = await testApp.app.inject({
+        method: 'POST',
+        url: routePath,
+        headers: {
+          authorization: revokedClient.authorization,
+          'content-type': 'application/json',
+          'idempotency-key': key,
+        },
+        payload: '{}',
+      });
+      expect(first.statusCode).toBe(201);
+      expect(await countEffects(testApp.pool, key)).toBe(1);
+      await revokedClient.revoke();
+      const replay = await testApp.app.inject({
+        method: 'POST',
+        url: routePath,
+        headers: {
+          authorization: revokedClient.authorization,
+          'content-type': 'application/json',
+          'idempotency-key': key,
+        },
+        payload: '{}',
+      });
+
+      expectErrorBody(replay, { status: 401, code: 'unauthorized', message: 'Unauthorized' });
+      expect(await countEffects(testApp.pool, key)).toBe(1);
+    } finally {
+      await testApp.close();
+      await revokedClient.remove();
     }
   });
 
@@ -414,4 +482,10 @@ describe('idempotency route authentication and misuse', () => {
       'request must be POST',
     );
   });
+});
+
+afterAll(async () => {
+  await owner.query(`DROP TABLE ${effectsTable}`);
+  await owner.end();
+  await closeTestDb();
 });
