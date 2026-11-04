@@ -43,6 +43,10 @@ function randomTestName(): string {
   return `t-${randomBytes(4).toString('hex')}`;
 }
 
+export function uniqueKey(): string {
+  return `f2-${randomUUID().replaceAll('-', '')}`;
+}
+
 async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(
   text: string,
   values?: unknown[],
