@@ -241,11 +241,124 @@ describe('idempotency wrapper', () => {
   it('lets exactly one body win when the same key is used with different bodies', async () => {
     expect(testApp.pool.options.max).toBe(10);
     const key = uniqueKey();
-    const responses = await Promise.all([request({ value: 1 }, key), request({ value: 2 }, key)]);
-    expect(responses.filter((response) => response.statusCode === 201)).toHaveLength(1);
-    expect(responses.filter((response) => response.statusCode === 409)).toHaveLength(1);
+    const responses = await Promise.all([
+      ...Array.from({ length: 10 }, () => request({ value: 'A' }, key)),
+      ...Array.from({ length: 10 }, () => request({ value: 'B' }, key)),
+    ]);
+    const winners = responses.filter(
+      (response) =>
+        response.statusCode === 201 && response.headers['idempotent-replayed'] === undefined,
+    );
+    expect(winners).toHaveLength(1);
     expect(await effectCount(key)).toBe(1);
+    const winnerBody = winners[0]?.json();
+    for (const response of responses) {
+      if (response.statusCode === 409) {
+        continue;
+      }
+      expect(response.statusCode).toBe(201);
+      if (response.headers['idempotent-replayed'] === 'true') {
+        expect(response.json()).toEqual(winnerBody);
+      } else {
+        expect(response.headers['idempotent-replayed']).toBeUndefined();
+        expect(response.json()).toEqual(winnerBody);
+      }
+    }
     expect(responses.every((response) => response.statusCode < 500)).toBe(true);
+  });
+
+  it('destroys the connection when COMMIT is refused', async () => {
+    const refusedPool = new pg.Pool({
+      connectionString: testUrls().app,
+      max: 2,
+    });
+    const firstKey = uniqueKey();
+    const secondKey = uniqueKey();
+    const refusedApp = await buildTestApp({
+      pool: refusedPool,
+      routes: (candidate) => {
+        candidate.post<{ Body: Record<string, unknown> }>(
+          routePath,
+          { config: { access: 'ledger:write' } },
+          (request, reply) =>
+            runIdempotent(request, reply, refusedPool, async (tx) => {
+              const body = request.body;
+              const key = request.headers['idempotency-key'];
+              await tx.query(
+                `INSERT INTO ${effectsTable} (request_key, body)
+                 VALUES ($1, $2::jsonb)`,
+                [key, JSON.stringify(body ?? null)],
+              );
+              if (body !== null && typeof body === 'object' && body.refusedCommit === true) {
+                await tx.query(
+                  `INSERT INTO idempotency_keys (client_id, key, request_hash)
+                   VALUES ($1, $2, $3)`,
+                  [client.id, secondKey, 'a'.repeat(64)],
+                );
+              }
+              return { status: 201, body: { accepted: body ?? null } };
+            }),
+        );
+      },
+    });
+    try {
+      await refusedPool.query('SELECT 1');
+      const beforeTotal = refusedPool.totalCount;
+      const response = await refusedApp.app.inject({
+        method: 'POST',
+        url: routePath,
+        headers: {
+          authorization: client.authorization,
+          'content-type': 'application/json',
+          'idempotency-key': firstKey,
+        },
+        payload: JSON.stringify({ refusedCommit: true }),
+      });
+      expectErrorBody(response, {
+        status: 500,
+        code: 'internal_error',
+        message: 'Something went wrong',
+      });
+      expect(refusedPool.totalCount).toBe(beforeTotal - 1);
+      expect(refusedPool.totalCount - refusedPool.idleCount).toBe(0);
+      const effects = await owner.query<{ count: string }>(
+        `SELECT count(*)::text AS count
+           FROM ${effectsTable}
+          WHERE request_key IN ($1, $2)`,
+        [firstKey, secondKey],
+      );
+      expect(effects.rows[0]?.count).toBe('0');
+      const keys = await owner.query<{ count: string }>(
+        `SELECT count(*)::text AS count
+           FROM idempotency_keys
+          WHERE client_id = $1 AND key IN ($2, $3)`,
+        [client.id, firstKey, secondKey],
+      );
+      expect(keys.rows[0]?.count).toBe('0');
+      const retry = await refusedApp.app.inject({
+        method: 'POST',
+        url: routePath,
+        headers: {
+          authorization: client.authorization,
+          'content-type': 'application/json',
+          'idempotency-key': firstKey,
+        },
+        payload: JSON.stringify({ normal: true }),
+      });
+      expect(retry.statusCode).toBe(201);
+    } finally {
+      await refusedApp.close();
+      await owner.query('DELETE FROM idempotency_keys WHERE client_id = $1 AND key IN ($2, $3)', [
+        client.id,
+        firstKey,
+        secondKey,
+      ]);
+      await owner.query(`DELETE FROM ${effectsTable} WHERE request_key IN ($1, $2)`, [
+        firstKey,
+        secondKey,
+      ]);
+      await refusedPool.end();
+    }
   });
 
   it('does not store a failed request', async () => {
