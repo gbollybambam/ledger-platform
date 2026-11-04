@@ -251,17 +251,17 @@ describe('idempotency wrapper', () => {
     );
     expect(winners).toHaveLength(1);
     expect(await effectCount(key)).toBe(1);
-    const winnerBody = winners[0]?.json();
+    const winnerBody = winners[0]?.body;
     for (const response of responses) {
       if (response.statusCode === 409) {
         continue;
       }
       expect(response.statusCode).toBe(201);
       if (response.headers['idempotent-replayed'] === 'true') {
-        expect(response.json()).toEqual(winnerBody);
+        expect(response.body).toBe(winnerBody);
       } else {
         expect(response.headers['idempotent-replayed']).toBeUndefined();
-        expect(response.json()).toEqual(winnerBody);
+        expect(response.body).toBe(winnerBody);
       }
     }
     expect(responses.every((response) => response.statusCode < 500)).toBe(true);

@@ -154,21 +154,21 @@ Hash test vectors:
 - Change: `docs/patterns.md` (add "Writing an idempotent endpoint", with a 10-line example), `docs/rfc-001.md` (one note: the table gets `transaction_id` in F4), `CHANGELOG.md`, this file
 
 ## Done when
-- [ ] All rules in docs/invariants.md still hold
-- [ ] The migration is exactly the SQL above, and the app role has only the stated privileges (tests R12, R18, R19)
-- [ ] The same request with the same key from the same client runs the handler once and replays the first status and body with `Idempotent-Replayed: true` (R1)
-- [ ] The same key with a different body or a different URL gives 409 `idempotency_key_reused` and changes nothing (R2, R3)
-- [ ] A missing or invalid key gives 400 and writes nothing, for every case in the table (R4)
-- [ ] 50 identical requests in parallel apply the effect exactly once, and all 50 replies have the same status and body (R5)
-- [ ] The same key used in parallel with two different bodies applies exactly one of them, and nothing returns a 5xx (R6)
-- [ ] A failed request (422, a thrown error, or a failure after the effect) leaves no key and no effect, and a retry with the same key can succeed (R7, R8, R9)
-- [ ] Keys are scoped to the client (R10)
-- [ ] Authentication happens first, and a revoked client cannot replay (R11)
-- [ ] A stored response cannot change or be deleted, and a key cannot commit without a response (R12)
-- [ ] Canonical JSON and the request hash pass every vector above and the edge cases (R13)
-- [ ] A lock timeout gives 503 `busy` with `Retry-After`, and unknown database errors give a generic 500 (R14, R15)
-- [ ] No connection leaks after 100 requests that include every kind of failure (R20)
-- [ ] The OpenAPI file documents the contract and `npm run openapi:lint` passes (R17)
+- [x] All rules in docs/invariants.md still hold
+- [x] The migration is exactly the SQL above, and the app role has only the stated privileges (tests R12, R18, R19)
+- [x] The same request with the same key from the same client runs the handler once and replays the first status and body with `Idempotent-Replayed: true` (R1)
+- [x] The same key with a different body or a different URL gives 409 `idempotency_key_reused` and changes nothing (R2, R3)
+- [x] A missing or invalid key gives 400 and writes nothing, for every case in the table (R4)
+- [x] 50 identical requests in parallel apply the effect exactly once, and all 50 replies have the same status and body (R5)
+- [x] The same key used in parallel with two different bodies applies exactly one of them, and nothing returns a 5xx (R6)
+- [x] A failed request (422, a thrown error, or a failure after the effect) leaves no key and no effect, and a retry with the same key can succeed (R7, R8, R9)
+- [x] Keys are scoped to the client (R10)
+- [x] Authentication happens first, and a revoked client cannot replay (R11)
+- [x] A stored response cannot change or be deleted, and a key cannot commit without a response (R12)
+- [x] Canonical JSON and the request hash pass every vector above and the edge cases (R13)
+- [x] A lock timeout gives 503 `busy` with `Retry-After`, and unknown database errors give a generic 500 (R14, R15)
+- [x] No connection leaks after 100 requests that include every kind of failure (R20)
+- [x] The OpenAPI file documents the contract and `npm run openapi:lint` passes (R17)
 - [ ] `npm run lint`, `format:check`, `typecheck`, `openapi:lint`, `test`, and `build` pass. CI is green
 
 ## Test plan
@@ -252,10 +252,11 @@ Why this is safe under concurrency (the executor must keep this reasoning in a c
 - `docs/roadmap.md` is edited by the owner, not the executor.
 
 ## Metrics
-- Questions the executor asked:
-- Fix-now findings in review pass 1:
-- Fix-now findings in review pass 2:
-- Rough minutes: spec check / tests first / build / review fixes:
+- Questions the executor asked: none
+- Fix-now findings in review pass 1: 2 weak assertions (R5 and R10); hardened, plus the requested follow-up fixes
+- Fix-now findings in review pass 2: not run
+- Rough minutes: spec check 10 / tests first 20 / build 5 / review fixes 90
+- `npm test` duration: 86.68 seconds; 18 test files; 169 tests passed
 
 ## Review log
 - Pass 1: findings, fixed, moved to backlog

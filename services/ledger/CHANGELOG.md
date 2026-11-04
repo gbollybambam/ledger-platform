@@ -9,6 +9,7 @@ The versions follow Semantic Versioning. Tags look like `ledger/v0.1.0`. See `..
 - F1 client administration, hashed API-key authentication, scopes, and `/v1/whoami`.
 - C1 shared test helpers and in-process client-admin test coverage.
 - F2 PostgreSQL-backed idempotency for retry-safe POST writes.
+- F2 hardening coverage for refused commits, concurrent different-body requests, and connection cleanup.
 
 ## [0.1.0] - 2026-10-30
 
