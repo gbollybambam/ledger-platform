@@ -14,11 +14,25 @@ describe('canonical JSON and request hashes', () => {
   });
 
   it.each([
+    ['string and number differ', '1', 1],
+    ['null property and missing property differ', { a: null }, {}],
+    ['array order matters', [1, 2], [2, 1]],
+  ])('%s', (_name, left, right) => {
+    expect(canonicalJson(left)).not.toBe(canonicalJson(right));
+  });
+
+  it('sorts objects inside arrays', () => {
+    expect(canonicalJson([{ b: 1, a: 2 }])).toBe(canonicalJson([{ a: 2, b: 1 }]));
+  });
+
+  it.each([
     ['undefined', undefined],
     ['a function', () => undefined],
     ['a bigint', BigInt(1)],
     ['NaN', Number.NaN],
     ['Infinity', Number.POSITIVE_INFINITY],
+    ['a Date', new Date(0)],
+    ['a Map', new Map()],
   ])('rejects %s as non-JSON', (_name, value) => {
     expect(() => canonicalJson(value)).toThrow(TypeError);
   });
@@ -57,5 +71,18 @@ describe('canonical JSON and request hashes', () => {
         body: null,
       }),
     );
+  });
+
+  it.each([
+    ['method', { method: 'GET', url: '/v1/test-only/idempotent', body: null }],
+    ['URL', { method: 'POST', url: '/v1/other', body: null }],
+    ['query order', { method: 'POST', url: '/v1/test-only/idempotent?b=2&a=1', body: null }],
+  ])('changes the request hash when %s changes', (_name, changed) => {
+    const base = requestHash({
+      method: 'POST',
+      url: '/v1/test-only/idempotent?a=1&b=2',
+      body: null,
+    });
+    expect(requestHash(changed)).not.toBe(base);
   });
 });

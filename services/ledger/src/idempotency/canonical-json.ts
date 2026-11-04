@@ -23,6 +23,9 @@ export function canonicalJson(value: unknown): string {
   }
 
   if (typeof value === 'object') {
+    if (Object.getPrototypeOf(value) !== Object.prototype) {
+      throw new TypeError('Value is not valid JSON');
+    }
     const object = value as Record<string, unknown>;
     const keys = Object.keys(object).sort();
     return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJson(object[key])}`).join(',')}}`;

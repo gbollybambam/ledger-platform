@@ -37,6 +37,9 @@ async function withIdempotencyInternal(options: {
     await tx.query('BEGIN');
     inTransaction = true;
 
+    // The primary key is the lock. A second request waits, then replays the
+    // committed response or proceeds after a rollback. The response is stored
+    // in the same transaction as the effect, and lock_timeout bounds the wait.
     const claimed = await tx.query(
       `INSERT INTO idempotency_keys (client_id, key, request_hash)
        VALUES ($1, $2, $3)

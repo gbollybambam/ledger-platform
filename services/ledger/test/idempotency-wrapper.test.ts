@@ -7,6 +7,7 @@ import { buildTestApp } from './helpers/app.js';
 import {
   closeTestDb,
   createTestClient,
+  uniqueKey,
   withTestClient,
   type TestClient,
 } from './helpers/clients.js';
@@ -17,7 +18,6 @@ import { runIdempotent } from '../src/idempotency/run-idempotent.js';
 import { withIdempotency } from '../src/idempotency/with-idempotency.js';
 
 const routePath = '/v1/test-only/idempotent';
-const validKey = 'abcdefgh';
 let owner: pg.Client;
 const effectsTable = `idempotency_effects_${randomUUID().replaceAll('-', '')}`;
 
@@ -84,6 +84,14 @@ describe('idempotency wrapper', () => {
               if (
                 typeof body === 'object' &&
                 body !== null &&
+                'dbError' in body &&
+                body.dbError === true
+              ) {
+                await tx.query('SELECT 1 / 0');
+              }
+              if (
+                typeof body === 'object' &&
+                body !== null &&
                 'atomic' in body &&
                 body.atomic === true
               ) {
@@ -102,7 +110,7 @@ describe('idempotency wrapper', () => {
     await client.remove();
   });
 
-  async function request(body?: object | null, key = validKey, url = routePath) {
+  async function request(body: object | null | undefined, key: string, url = routePath) {
     return app.inject({
       method: 'POST',
       url,
@@ -128,61 +136,100 @@ describe('idempotency wrapper', () => {
   }
 
   it('replays the first response and runs the handler once', async () => {
-    const first = await request({ value: 1 });
-    const second = await request({ value: 1 });
+    const key = uniqueKey();
+    const first = await request({ value: 1 }, key);
+    const second = await request({ value: 1 }, key);
     expect(first.statusCode).toBe(201);
     expect(second.statusCode).toBe(201);
     expect(second.json()).toEqual(first.json());
     expect(second.headers['idempotent-replayed']).toBe('true');
-    expect(await effectCount(validKey)).toBe(1);
+    expect(await effectCount(key)).toBe(1);
   });
 
   it('refuses the same key with a different body', async () => {
-    await request({ value: 1 });
-    const before = await effectCount(validKey);
-    const response = await request({ value: 2 });
+    const key = uniqueKey();
+    await request({ value: 1 }, key);
+    const before = await effectCount(key);
+    const response = await request({ value: 2 }, key);
     expectErrorBody(response, {
       status: 409,
       code: 'idempotency_key_reused',
       message: 'This Idempotency-Key was used for a different request',
     });
-    expect(await effectCount(validKey)).toBe(before);
+    expect(await effectCount(key)).toBe(before);
   });
 
   it('refuses the same key on a different URL', async () => {
-    await request({ value: 1 });
-    const before = await effectCount(validKey);
-    const response = await request({ value: 1 }, validKey, `${routePath}?other=1`);
+    const key = uniqueKey();
+    await request({ value: 1 }, key);
+    const before = await effectCount(key);
+    const response = await request({ value: 1 }, key, `${routePath}?other=1`);
     expectErrorBody(response, {
       status: 409,
       code: 'idempotency_key_reused',
       message: 'This Idempotency-Key was used for a different request',
     });
-    expect(await effectCount(validKey)).toBe(before);
+    expect(await effectCount(key)).toBe(before);
   });
 
   it('treats no body and null as equal, but an empty object as different', async () => {
-    const first = await request(undefined, 'body-shape-key');
-    const nullBody = await request(null, 'body-shape-key');
+    const key = uniqueKey();
+    const first = await request(undefined, key);
+    const nullBody = await request(null, key);
     expect(nullBody.statusCode).toBe(201);
     expect(nullBody.headers['idempotent-replayed']).toBe('true');
-    const emptyObject = await request({}, 'body-shape-key');
+    const emptyObject = await request({}, key);
     expectErrorBody(emptyObject, {
       status: 409,
       code: 'idempotency_key_reused',
       message: 'This Idempotency-Key was used for a different request',
     });
+
     expect(first.json()).toEqual(nullBody.json());
+  });
+
+  it('rejects invalid Idempotency-Key headers over HTTP without writing rows', async () => {
+    const cases = [
+      ['missing', undefined, 'Idempotency-Key header is required'],
+      ['7 characters', '1234567', 'Idempotency-Key header is not valid'],
+      ['129 characters', 'a'.repeat(129), 'Idempotency-Key header is not valid'],
+      ['bad character', 'bad key!', 'Idempotency-Key header is not valid'],
+      ['two joined headers', 'abcdefgh,ijklmnop', 'Idempotency-Key header is not valid'],
+    ] as const;
+    for (const [name, key, message] of cases) {
+      const before = await testApp.pool.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM idempotency_keys WHERE client_id = $1',
+        [client.id],
+      );
+      const headers = {
+        authorization: client.authorization,
+        'content-type': 'application/json',
+        ...(key === undefined ? {} : { 'idempotency-key': key }),
+      };
+      const response = await app.inject({
+        method: 'POST',
+        url: routePath,
+        headers,
+        payload: '{}',
+      });
+      expectErrorBody(response, { status: 400, code: 'invalid_request', message });
+      const after = await testApp.pool.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM idempotency_keys WHERE client_id = $1',
+        [client.id],
+      );
+      expect(after.rows[0]?.count, name).toBe(before.rows[0]?.count);
+    }
   });
 
   it('applies 50 parallel identical requests exactly once', async () => {
     expect(testApp.pool.options.max).toBe(10);
+    const key = uniqueKey();
     const responses = await Promise.all(
-      Array.from({ length: 50 }, () => request({ value: 1 }, 'parallel-key')),
+      Array.from({ length: 50 }, () => request({ value: 1 }, key)),
     );
     expect(responses.every((response) => response.statusCode === 201)).toBe(true);
     expect(new Set(responses.map((response) => response.body)).size).toBe(1);
-    expect(await effectCount('parallel-key')).toBe(1);
+    expect(await effectCount(key)).toBe(1);
     expect(
       responses.filter((response) => response.headers['idempotent-replayed'] === undefined),
     ).toHaveLength(1);
@@ -193,52 +240,57 @@ describe('idempotency wrapper', () => {
 
   it('lets exactly one body win when the same key is used with different bodies', async () => {
     expect(testApp.pool.options.max).toBe(10);
+    const key = uniqueKey();
     const responses = await Promise.all([
-      request({ value: 1 }, 'different-key'),
-      request({ value: 2 }, 'different-key'),
+      request({ value: 1 }, key),
+      request({ value: 2 }, key),
     ]);
     expect(responses.filter((response) => response.statusCode === 201)).toHaveLength(1);
     expect(responses.filter((response) => response.statusCode === 409)).toHaveLength(1);
-    expect(await effectCount('different-key')).toBe(1);
+    expect(await effectCount(key)).toBe(1);
     expect(responses.every((response) => response.statusCode < 500)).toBe(true);
   });
 
   it('does not store a failed request', async () => {
-    const response = await request({ fail: true }, 'failed-key');
+    const key = uniqueKey();
+    const response = await request({ fail: true }, key);
     expect(response.statusCode).toBe(422);
-    expect(await effectCount('failed-key')).toBe(0);
-    const retry = await request({ fail: false }, 'failed-key');
+    expect(await effectCount(key)).toBe(0);
+    const retry = await request({ fail: false }, key);
     expect(retry.statusCode).toBe(201);
     expect(retry.headers['idempotent-replayed']).toBeUndefined();
-    expect(await effectCount('failed-key')).toBe(1);
+    expect(await effectCount(key)).toBe(1);
   });
 
   it('rolls back on an unexpected error', async () => {
-    const response = await request({ unexpected: true }, 'unexpected-key');
+    const key = uniqueKey();
+    const response = await request({ unexpected: true }, key);
     expectErrorBody(response, {
       status: 500,
       code: 'internal_error',
       message: 'Something went wrong',
     });
     expect(response.body).not.toContain('forced test failure');
-    expect(await effectCount('unexpected-key')).toBe(0);
-    const retry = await request({ unexpected: false }, 'unexpected-key');
+    expect(await effectCount(key)).toBe(0);
+    const retry = await request({ unexpected: false }, key);
     expect(retry.statusCode).toBe(201);
     expect(retry.headers['idempotent-replayed']).toBeUndefined();
   });
 
   it('commits the effect and the key together or not at all', async () => {
-    const response = await request({ atomic: true }, 'atomic-key');
+    const key = uniqueKey();
+    const response = await request({ atomic: true }, key);
     expect(response.statusCode).toBe(500);
-    expect(await effectCount('atomic-key')).toBe(0);
-    expect(await keyCount('atomic-key')).toBe(0);
-    const success = await request({ atomic: false }, 'atomic-key');
+    expect(await effectCount(key)).toBe(0);
+    expect(await keyCount(key)).toBe(0);
+    const success = await request({ atomic: false }, key);
     expect(success.statusCode).toBe(201);
-    expect(await effectCount('atomic-key')).toBe(1);
-    expect(await keyCount('atomic-key')).toBe(1);
+    expect(await effectCount(key)).toBe(1);
+    expect(await keyCount(key)).toBe(1);
   });
 
   it('scopes keys to the client', async () => {
+    const key = uniqueKey();
     await withTestClient({ scopes: ['ledger:write'] }, async (other) => {
       const responses = await Promise.all([
         app.inject({
@@ -247,17 +299,17 @@ describe('idempotency wrapper', () => {
           headers: {
             authorization: other.authorization,
             'content-type': 'application/json',
-            'idempotency-key': 'shared-key',
+            'idempotency-key': key,
           },
           payload: JSON.stringify({ value: 1 }),
         }),
-        request({ value: 1 }, 'shared-key'),
+        request({ value: 1 }, key),
       ]);
       expect(responses[0]?.statusCode).toBe(201);
       expect(responses[1]?.statusCode).toBe(201);
       expect(responses[0]?.headers['idempotent-replayed']).toBeUndefined();
       expect(responses[1]?.headers['idempotent-replayed']).toBeUndefined();
-      expect(await effectCount('shared-key')).toBe(2);
+      expect(await effectCount(key)).toBe(2);
     });
   });
 
@@ -355,17 +407,92 @@ describe('idempotency wrapper', () => {
   });
 
   it('replays the same JSON value', async () => {
-    const first = await request({ nested: { unicode: '€' }, array: [1, 'two'] }, 'json-value-key');
-    const second = await request({ nested: { unicode: '€' }, array: [1, 'two'] }, 'json-value-key');
+    const key = uniqueKey();
+    const first = await request({ nested: { unicode: '€' }, array: [1, 'two'] }, key);
+    const second = await request({ nested: { unicode: '€' }, array: [1, 'two'] }, key);
     expect(second.json()).toEqual(first.json());
   });
 
   it('never leaks a connection', async () => {
-    for (let index = 0; index < 100; index += 1) {
-      await request({ index }, `leak-${String(index).padStart(5, '0')}`);
+    const leakPool = new pg.Pool({
+      connectionString: testUrls().app,
+      max: 2,
+      connectionTimeoutMillis: 500,
+    });
+    const leakApp = await buildTestApp({
+      pool: leakPool,
+      routes: (candidate) => {
+        candidate.post<{ Body: Record<string, unknown> }>(
+          routePath,
+          { config: { access: 'ledger:write' } },
+          (request, reply) =>
+            runIdempotent(request, reply, leakPool, async (tx) => {
+              const body = request.body;
+              await tx.query(
+                `INSERT INTO ${effectsTable} (request_key, body)
+                 VALUES ($1, $2::jsonb)`,
+                [request.headers['idempotency-key'], JSON.stringify(body ?? null)],
+              );
+              if (body !== null && typeof body === 'object' && body.fail === true) {
+                throw new ApiError(422, 'invalid_request', 'forced test failure');
+              }
+              if (body !== null && typeof body === 'object' && body.unexpected === true) {
+                throw new Error('forced test failure');
+              }
+              if (body !== null && typeof body === 'object' && body.dbError === true) {
+                await tx.query('SELECT 1 / 0');
+              }
+              return { status: 201, body: { accepted: body ?? null } };
+            }),
+        );
+      },
+    });
+    try {
+      for (let index = 0; index < 100; index += 1) {
+        const cycle = index % 6;
+        const key =
+          cycle <= 2
+            ? `cycle-${String(index - (index % 6)).padStart(5, '0')}`
+            : `cycle-${String(index).padStart(5, '0')}`;
+        const body =
+          cycle === 0
+            ? { value: index }
+            : cycle === 1
+              ? { value: index - 1 }
+              : cycle === 2
+                ? { value: 'different' }
+                : cycle === 3
+                  ? { fail: true }
+                  : cycle === 4
+                    ? { unexpected: true }
+                    : { dbError: true };
+        const response = await leakApp.app.inject({
+          method: 'POST',
+          url: routePath,
+          headers: {
+            authorization: client.authorization,
+            'content-type': 'application/json',
+            'idempotency-key': key,
+          },
+          payload: JSON.stringify(body),
+        });
+        if (cycle === 0 || cycle === 1) {
+          expect(response.statusCode).toBe(201);
+        } else if (cycle === 2) {
+          expect(response.statusCode).toBe(409);
+        } else if (cycle === 3) {
+          expect(response.statusCode).toBe(422);
+        } else {
+          expect(response.statusCode).toBe(500);
+        }
+        if ((index + 1) % 10 === 0) {
+          expect(leakPool.totalCount - leakPool.idleCount).toBe(0);
+        }
+      }
+    } finally {
+      await leakApp.close();
+      await leakPool.end();
     }
-    expect(await effectCount()).toBeGreaterThanOrEqual(100);
-    expect(testApp.pool.totalCount - testApp.pool.idleCount).toBe(0);
   });
 
   it('uses a single connection per request', async () => {
@@ -376,7 +503,7 @@ describe('idempotency wrapper', () => {
     const responsePromise = withIdempotency({
       pool: testApp.pool,
       client,
-      key: 'single-connection-key',
+      key: uniqueKey(),
       hash: 'a'.repeat(64),
       run: async (tx) => {
         await tx.query('SELECT 1');
@@ -536,6 +663,15 @@ describe('idempotency route authentication and misuse', () => {
     await expect(runIdempotent(request, reply, {} as never, run)).rejects.toThrow(
       'request must be POST',
     );
+    let called = false;
+    const postWithoutClient = { method: 'POST', client: undefined } as never;
+    await expect(
+      runIdempotent(postWithoutClient, reply, {} as never, async () => {
+        called = true;
+        return { status: 200, body: {} };
+      }),
+    ).rejects.toThrow('request client is required');
+    expect(called).toBe(false);
   });
 });
 
