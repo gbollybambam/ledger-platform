@@ -6,8 +6,6 @@ import { parse } from 'yaml';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { testUrls } from './helpers/db.js';
 
-const migrationDir = join(process.cwd(), 'migrations');
-
 describe('idempotency migration', () => {
   let owner: pg.Client;
   let app: pg.Pool;
@@ -38,14 +36,6 @@ describe('idempotency migration', () => {
     } catch (error) {
       return error as pg.DatabaseError;
     }
-  }
-
-  async function insertPending(key: string, hash = 'a'.repeat(64)): Promise<void> {
-    await owner.query(
-      `INSERT INTO idempotency_keys (client_id, key, request_hash)
-       VALUES ($1, $2, $3)`,
-      [clientId, key, hash],
-    );
   }
 
   it('protects stored responses with database privileges and triggers', async () => {
@@ -159,7 +149,7 @@ describe('idempotency migration', () => {
          VALUES ($1, $2, $3, 201, '{}'::jsonb)`,
         [clientId, key, 'a'.repeat(64)],
       );
-      const result = await owner.query(
+      const result = await owner.query<{ response_code: number }>(
         'SELECT response_code FROM idempotency_keys WHERE client_id = $1 AND key = $2',
         [clientId, key],
       );
@@ -180,11 +170,11 @@ describe('idempotency migration', () => {
         responses: Record<string, { description?: string; headers?: Record<string, unknown> }>;
       };
     };
-    expect(spec.components.headers.IdempotentReplayed.schema?.enum).toEqual(['true']);
-    expect(spec.components.parameters.IdempotencyKey.schema?.pattern).toBe(
+    expect(spec.components.headers.IdempotentReplayed?.schema?.enum).toEqual(['true']);
+    expect(spec.components.parameters.IdempotencyKey?.schema?.pattern).toBe(
       '^[A-Za-z0-9._:-]{8,128}$',
     );
-    expect(spec.components.responses.Busy.headers).toHaveProperty('Retry-After');
-    expect(spec.components.responses.Conflict.description).toContain('idempotency_key_reused');
+    expect(spec.components.responses.Busy?.headers).toHaveProperty('Retry-After');
+    expect(spec.components.responses.Conflict?.description).toContain('idempotency_key_reused');
   });
 });

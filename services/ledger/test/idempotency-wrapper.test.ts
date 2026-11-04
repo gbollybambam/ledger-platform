@@ -241,10 +241,7 @@ describe('idempotency wrapper', () => {
   it('lets exactly one body win when the same key is used with different bodies', async () => {
     expect(testApp.pool.options.max).toBe(10);
     const key = uniqueKey();
-    const responses = await Promise.all([
-      request({ value: 1 }, key),
-      request({ value: 2 }, key),
-    ]);
+    const responses = await Promise.all([request({ value: 1 }, key), request({ value: 2 }, key)]);
     expect(responses.filter((response) => response.statusCode === 201)).toHaveLength(1);
     expect(responses.filter((response) => response.statusCode === 409)).toHaveLength(1);
     expect(await effectCount(key)).toBe(1);
@@ -326,10 +323,9 @@ describe('idempotency wrapper', () => {
       pool: lockPool,
       routes: (candidate) => {
         candidate.post(routePath, { config: { access: 'ledger:write' } }, (request, reply) =>
-          runIdempotent(request, reply, lockPool, async () => ({
-            status: 201,
-            body: { ok: true },
-          })),
+          runIdempotent(request, reply, lockPool, () =>
+            Promise.resolve({ status: 201, body: { ok: true } }),
+          ),
         );
       },
     });
@@ -395,7 +391,7 @@ describe('idempotency wrapper', () => {
       });
       expect(response.body).not.toContain('division');
       expect(response.body).not.toContain('SELECT');
-      const rows = await errorApp.pool.query(
+      const rows = await errorApp.pool.query<{ count: number }>(
         'SELECT count(*)::int AS count FROM idempotency_keys WHERE client_id = $1 AND key = $2',
         [client.id, key],
       );
@@ -448,12 +444,13 @@ describe('idempotency wrapper', () => {
       },
     });
     try {
+      const cyclePrefix = uniqueKey();
       for (let index = 0; index < 100; index += 1) {
         const cycle = index % 6;
         const key =
           cycle <= 2
-            ? `cycle-${String(index - (index % 6)).padStart(5, '0')}`
-            : `cycle-${String(index).padStart(5, '0')}`;
+            ? `${cyclePrefix}-${String(index - (index % 6)).padStart(5, '0')}`
+            : `${cyclePrefix}-${String(index).padStart(5, '0')}`;
         const body =
           cycle === 0
             ? { value: index }
@@ -538,7 +535,7 @@ describe('idempotency route authentication and misuse', () => {
         payload: '{}',
       });
       expectErrorBody(response, { status: 401, code: 'unauthorized' });
-      const rows = await testApp.pool.query(
+      const rows = await testApp.pool.query<{ count: number }>(
         'SELECT count(*)::int AS count FROM idempotency_keys WHERE key = $1',
         [key],
       );
@@ -589,7 +586,7 @@ describe('idempotency route authentication and misuse', () => {
         payload: '{}',
       });
       expectErrorBody(replay, { status: 403, code: 'forbidden' });
-      const keyRows = await testApp.pool.query(
+      const keyRows = await testApp.pool.query<{ count: number }>(
         `SELECT count(*)::int AS count
            FROM idempotency_keys
           WHERE client_id = $1 AND key = $2`,
@@ -666,9 +663,9 @@ describe('idempotency route authentication and misuse', () => {
     let called = false;
     const postWithoutClient = { method: 'POST', client: undefined } as never;
     await expect(
-      runIdempotent(postWithoutClient, reply, {} as never, async () => {
+      runIdempotent(postWithoutClient, reply, {} as never, () => {
         called = true;
-        return { status: 200, body: {} };
+        return Promise.resolve({ status: 200, body: {} });
       }),
     ).rejects.toThrow('request client is required');
     expect(called).toBe(false);
