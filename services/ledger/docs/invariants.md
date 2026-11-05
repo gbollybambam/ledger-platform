@@ -21,6 +21,7 @@ How to read this file: a rule is only real if something fails when it is broken.
 | INV-08 | A mistake is fixed only by a reversal. A transaction can be reversed at most once. A reversal cannot be reversed in v1. | A unique constraint on `reverses_transaction_id`. A test reverses twice. |
 | INV-09 | Cached account totals equal the sums of the entries. Per currency, total debit-normal balances equal total credit-normal balances. | The `verify` command runs at the end of every integration test and in CI. |
 | INV-10 | The ledger makes no outbound network call while a database transaction is open. In v1 it makes none at all. | Code review rule and a test that scans the source for network clients. |
+| INV-17 | An account's identity never changes, and accounts are never deleted. The normal balance follows the kind. Only `equity` accounts may allow negative balances. An account cannot be created with a balance (DEC-0020). | CHECK constraints, two triggers, and column-level grants. Tests try each change as the app role and as the owner role. |
 
 ## B. Who can do what
 
@@ -31,16 +32,17 @@ How to read this file: a rule is only real if something fails when it is broken.
 | INV-13 | `(client, external_ref)` is unique. A repeat is rejected and creates nothing. | A unique constraint. A test posts the same reference twice. |
 | INV-14 | Secrets never appear in logs, error bodies, or responses. This covers API keys and the `Authorization` header. | A test captures the logs of a failed and a successful request, and searches for the key. |
 
-## C. Reading and the contract
+## C. Reading, input, and the contract
 
 | ID | Rule | What fails if it is broken |
 | -- | ---- | -------------------------- |
 | INV-15 | A list never skips or repeats a committed row. Entries of one account page by `seq`. Global transaction lists return only rows older than the lag and report `as_of` (DEC-0019). | A test writes while it pages, and checks that the union of all pages equals the truth. A test that the app role has `transaction_timeout`. |
 | INV-16 | The routes the service serves are exactly the routes in `openapi/ledger.v1.yaml`. Every `POST` uses `Idempotency-Key`. A breaking change needs a new version path (`/v2`). | `test/openapi.test.ts` and `npm run openapi:lint`. |
+| INV-18 | Input is strict (DEC-0021). Unknown fields, wrong types, and silent conversions are refused with 400. A body over 64 KiB gets 413. Error messages never contain client-supplied text. | Tests send wrong types, extra fields, malformed JSON, and a unique canary string, and check the response for exact fixed messages and no canary. |
 
 ## Decided in research
 
-- Can a balance go negative? **No**, unless the account is created with `allow_negative: true`. The default is `false`.
+- Can a balance go negative? **No**, unless the account is an `equity` account created with `allow_negative: true`. The default is `false`.
 - Which balance is the source of truth? **The entries.** Cached totals are derived (DEC-0002).
 - Currencies? One per transaction (DEC-0004). Allowed codes come from a table (DEC-0015).
 - Reconciliation, payouts, webhooks? **Not the ledger's job.** Other services do them with `external_ref` and the query API.

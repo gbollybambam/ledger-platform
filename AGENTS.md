@@ -40,7 +40,8 @@ This system is designed for real money. Correctness and safety come before speed
 7. Do not build anything from a later version. Check the service's `docs/versions.md`.
 8. Ask before you add a dependency. Say why it is needed and what else you considered.
 9. Money is never a floating-point number. See the service rules.
-10. Ask all your questions in ONE list, once, and never about anything the feature file already decides. If you are stuck, use the stuck rule in `docs/process/feature-loop.md`.
+10. Keep output short: cap command output with `| tail -40`, use `git diff --stat`, report in tables. Run targeted tests while building and the full check only when told.
+11. Ask all your questions in ONE list, once, and never about anything the feature file already decides. If you are stuck, use the stuck rule in `docs/process/feature-loop.md`.
 
 ## Never
 

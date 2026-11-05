@@ -17,6 +17,11 @@ What went wrong in F1, why it cost time, and the rule that stops it from happeni
 | 11 | `npm run` prints a banner, which can break exact-output tests | Works on one machine, fails on another | Run scripts with `--silent` in tests |
 | 12 | Review found 13 fix-now items across two reviews | Most were classes of mistake (rows 2 to 9), not one-off bugs | Run the review checklist **yourself** (prompt 10) before asking for a review |
 
+| 13 | F2: tests read the SQL file text instead of using the database, so their sabotage was circular | The database guards were unproven | A guard is tested by trying to break it as the right role. Never test a migration by reading its text |
+| 14 | F2: the "effect" was an in-memory counter | "Exactly once" and "atomic" were not proven | Use a real effect table. Count rows |
+| 15 | F2: `toBeDefined()` on a `count(*)` result | It is always true | Assert exact values |
+| 16 | F2: one full check after every small step, long output | About 150 credits and a day for one feature | Targeted tests while building. Full check before review and PR. Capped output. Two short sessions |
+
 ## What to measure
 
 Record these in each feature file (see the "Metrics" section of the template):

@@ -55,6 +55,12 @@ It is designed for real money. When a rule and convenience disagree, the rule wi
 
 Before you say a task is done, run: `npm run lint && npm run format:check && npm run typecheck && npm run openapi:lint && npm test && npm run build`.
 
+## Output and cost discipline
+
+- While building, run only the affected test file (`npx vitest run test/<file>`) and `npm run typecheck`. Run the full check only when the prompt says so (before review, before the PR).
+- Cap long output: pipe through `| tail -40`. Use `git diff --stat`, not full diffs. Never print whole files unless asked.
+- Reports are tables and short lines. No long explanations.
+
 ## Money rules (non-negotiable)
 
 1. Money is a `bigint` in code, a `bigint` column in the database, and an **integer string** in the API. Never a JavaScript `number`.
@@ -86,7 +92,7 @@ Before you say a task is done, run: `npm run lint && npm run format:check && npm
 
 ## Testing rules
 
-- **Sabotage check:** for every rule, break the production code on purpose and show its test fails. Then restore it. A test that still passes is weak. Fix it.
+- **Sabotage check:** for every row marked **S** in the test plan, break the production code on purpose and show its test fails. Then restore it. A test that still passes is weak. Fix it. For rows without S, ask yourself "would this test pass without the feature?" and fix it if yes.
 - Every rule has a positive and a negative test. A limit is tested on both sides and past the limit.
 - Unique fixtures per test. Cleanup in `try/finally`. No fixed IDs. No test depends on another.
 - Assert exact bodies, status codes, and headers.

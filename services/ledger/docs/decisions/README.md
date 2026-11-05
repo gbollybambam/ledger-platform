@@ -25,6 +25,8 @@ Platform-wide decisions are in `docs/decisions/` at the repository root (`P-NNNN
 | [0017](0017-migrations-node-pg-migrate.md) | Migrations: `node-pg-migrate`, plain SQL, forward-only | pivot |
 | [0018](0018-openapi-contract-first.md) | OpenAPI 3.0 contract first, with a drift test | pivot |
 | [0019](0019-listing-watermark.md) | Safe listing: per-account paging and a watermark | pivot |
+| [0020](0020-accounts-rules.md) | Account rules: derived normal balance, immutable, never deleted | F3 |
+| [0021](0021-strict-input-validation.md) | Strict input validation and fixed error messages | F3 |
 
 "pivot" means the decision came from moving to separate services (see `docs/architecture-assessment.md` at the repository root).
 An earlier decision about a simulated payment provider was dropped: provider work belongs to the gateway service.
