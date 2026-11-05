@@ -31,13 +31,13 @@ app.get('/v1/accounts/:id', { config: { access: 'ledger:read' } }, handler);
 - Map known database errors in one place (`src/http/db-errors.ts`). Do not catch database errors in handlers to hide them.
 - A 401 always has the same body and `WWW-Authenticate: Bearer`.
 
-## 4. Request validation
+## 4. Request validation (DEC-0021)
 
-- Every route that takes a body, query, or params has a JSON schema with `additionalProperties: false`.
-- The service must create Fastify with strict validation (no coercion, no stripping, no defaults):
-  `ajv: { customOptions: { coerceTypes: false, removeAdditional: false, useDefaults: false, allErrors: false } }`.
-  Fastify's defaults convert types silently (for example a number into a string). That is not acceptable for money.
-- A validation error returns 400 `invalid_request` with a generic message. It does not echo the input.
+- Every route that takes a body, query, or params has a JSON schema with `additionalProperties: false`. Shared options and the error formatter live in `src/http/validation.ts`.
+- Fastify is created with `ajv.customOptions` `{ coerceTypes: false, removeAdditional: false, useDefaults: false, allErrors: false }` and `bodyLimit: 65536`. Its defaults convert types and drop fields silently.
+- Error messages are fixed text. Never forward `error.message` from Fastify or Ajv. Never use Ajv's `additionalProperty` value: it is the client's text.
+- A validation error is 400 `invalid_request`: `Request is not valid`, or `Request is not valid: <field>` for a field named in our own schemas.
+- Unmatched `text/plain` bodies fail validation (400). A missing or unknown content type is 415. A body over the limit is 413.
 
 ## 5. Money and SQL
 
@@ -62,7 +62,7 @@ app.get('/v1/accounts/:id', { config: { access: 'ledger:read' } }, handler);
 - Assert exact bodies, status codes, and headers.
 - Use the helpers in `test/helpers/` (see `docs/features/C01-test-helpers.md`). Do not copy fixture code between files.
 - Logic tests run in-process. Start a real process only for one or two smoke tests, and run scripts with `npm run --silent`.
-- **Sabotage check:** for each rule, break the production code on purpose and show that the test fails. Then restore it.
+- **Sabotage check:** for each test-plan row marked **S**, break the production code on purpose and show that the test fails. Then restore it.
 - A test that loops over all routes keeps future routes covered.
 
 ## 8. OpenAPI
@@ -76,21 +76,3 @@ app.get('/v1/accounts/:id', { config: { access: 'ledger:read' } }, handler);
 
 - Tests first, in their own commit. Then one commit per rule or step.
 - Read `git diff` before every commit. No stray paths, no debug code.
-
-## 10. Writing an idempotent endpoint
-
-```ts
-const key = parseIdempotencyKey(request.headers['idempotency-key']);
-const outcome = await withIdempotency({
-  pool,
-  client: request.client!,
-  key,
-  hash: requestHash({ method: request.method, url: request.raw.url!, body: request.body ?? null }),
-  run: (tx) => postWith(tx, request.body),
-});
-if (outcome.replayed) reply.header('idempotent-replayed', 'true');
-return reply.status(outcome.status).send(outcome.body);
-```
-
-The callback must use the supplied `tx` for every SQL statement. The idempotency row,
-the effect, and the stored response commit together.

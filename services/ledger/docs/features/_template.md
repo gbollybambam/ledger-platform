@@ -2,51 +2,59 @@
 Status: todo | in progress | done
 
 ## Goal
-<One or two sentences. What can be done after this feature that could not be done before?>
+<One or two sentences.>
 
 ## Out of scope
-<Explicit exclusions. Anything on this list must not be built.>
+<Explicit exclusions.>
 
 ## Reads first
-<Ordered list of files and sections the executor must read.>
+<Only the files and sections needed. The spec should be self-contained.>
 
 ## Decisions already made (do not ask)
-<Numbered. Every choice that could otherwise be a question: names, formats, limits, error codes, status codes, file paths, SQL. The executor asks only about things NOT listed here.>
+<Numbered. Every choice that could be a question: names, formats, limits, codes, paths, SQL.>
 
 ## Exact formats
-<Exact SQL, JSON bodies, headers, error codes, command output. Copy-paste ready.>
+<Exact SQL, JSON, headers, error codes, output.>
 
 ## Files
-<Exact paths to create or change, one line each.>
+<Exact paths to create or change.>
 
 ## Done when
 - [ ] All rules in docs/invariants.md still hold
-- [ ] <Rule 1, testable> (test: <name>)
-- [ ] <Rule 2, testable> (test: <name>)
+- [ ] <Rule, testable> (rows: Rn)
 
 ## Test plan
-| Rule | Test name | Sabotage that must make it fail |
-| ---- | --------- | ------------------------------- |
-| <rule> | <test name> | <one-line change to the production code that must turn this test red> |
+S = sabotage required (security, money, integrity). Rows without S: check that the test would fail without the feature.
+
+| Row | Rule | Test name | S | Sabotage (one-line change that must turn the test red) |
+| --- | ---- | --------- | - | ------------------------------------------------------- |
 
 ## Edge cases that must be tested
-<Boundaries (both sides, and past the limit), bad input, concurrency, failure in the middle, repeat, order.>
+<Boundaries on both sides and past the limit, bad input, concurrency, failure in the middle, repeat, order.>
 
 ## Fail-closed checklist
-<Which new controls default to deny? Which test loops over all routes or all cases?>
+<Which controls default to deny? Which test loops over all cases?>
 
-## Complex parts (extra oversight)
-<The algorithm, step by step, and the test cases that prove it. The planner reviews the diff of these files before the feature is done.>
+## Complex parts
+<The algorithm and cases, written out.>
+Planner review: yes (src + migrations diff, test names, S-sabotage table).
 
 ## Docs to update
-<Files that must change in the same PR: OpenAPI, RFC, patterns, CHANGELOG, roadmap.>
+<Files the executor changes in the same PR. The planner owns RFC, invariants, and decisions.>
 
-## Metrics
-- Questions the executor asked:
-- Fix-now findings in review pass 1:
-- Fix-now findings in review pass 2:
-- Rough minutes: spec check / tests first / build / review fixes:
+## Metrics (write the AIC counter after each step)
+| Step | AIC used |
+| ---- | -------- |
+| Prompt 1 | |
+| Prompt 2 (tests) | |
+| Prompt 3 (build + prove) | |
+| Review fixes | |
+| Done check | |
+| Total | |
+
+Questions asked: | Fix-now findings: | Minutes in total:
 
 ## Review log
-- Pass 1: findings, fixed, moved to backlog
-- Pass 2 (only if pass 1 had fix-now items): findings, fixed, moved to backlog
+- Gemini pass 1:
+- Planner review:
+- Pass 2 (only if there were fix-now items):
