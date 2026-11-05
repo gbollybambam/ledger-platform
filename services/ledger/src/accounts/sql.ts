@@ -29,6 +29,8 @@ export function accountFromRow(row: AccountRow): Account {
 
 const accountColumns = `id, client_id, name, kind, normal_balance, currency,
   allow_negative, external_id, created_at`;
+const accountColumnsQualified = `a.id, a.client_id, a.name, a.kind, a.normal_balance, a.currency,
+  a.allow_negative, a.external_id, a.created_at`;
 
 export async function insertAccount(
   tx: PoolClient,
@@ -77,7 +79,7 @@ export async function findAccount(
   clientName: string,
 ): Promise<Account | undefined> {
   const result = await pool.query<AccountRow>(
-    `SELECT ${accountColumns}
+    `SELECT ${accountColumnsQualified}
        FROM accounts AS a
        JOIN clients AS c ON c.id = a.client_id
       WHERE a.external_id = $1 AND c.name = $2`,

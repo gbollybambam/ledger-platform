@@ -30,7 +30,7 @@ CREATE TABLE accounts (
        WHEN 'debit'  THEN debits_total - credits_total
        ELSE               credits_total - debits_total
      END) >= 0
-);
+));
 
 GRANT SELECT ON accounts TO ledger_app;
 GRANT INSERT (id, client_id, name, kind, normal_balance, currency, allow_negative, external_id)

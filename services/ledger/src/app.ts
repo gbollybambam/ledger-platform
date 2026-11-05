@@ -3,7 +3,7 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 import type { Pool } from 'pg';
 import { PUBLIC_PATHS } from './auth/access.js';
 import { registerAuthentication } from './auth/authenticate.js';
-import { registerErrorHandling } from './http/errors.js';
+import { ApiError, errorBody, registerErrorHandling } from './http/errors.js';
 import { registerHealthRoutes } from './http/health.js';
 import { registerWhoamiRoute } from './http/whoami.js';
 import { formatSchemaError } from './http/validation.js';
@@ -47,6 +47,18 @@ export function buildApp({ pool, logger = false }: AppDeps): FastifyInstance {
       },
     },
     schemaErrorFormatter: formatSchemaError,
+    frameworkErrors: (error, request, reply) => {
+      if (error.code === 'FST_ERR_BAD_URL') {
+        reply.raw.statusCode = 401;
+        reply.raw.setHeader('content-type', 'application/json; charset=utf-8');
+        reply.raw.setHeader('www-authenticate', 'Bearer');
+        reply.raw.setHeader('x-request-id', request.id);
+        reply.raw.end(JSON.stringify(errorBody('unauthorized', 'Unauthorized', request.id)));
+        return;
+      }
+      reply.raw.statusCode = error.statusCode ?? 500;
+      reply.raw.end(error.message);
+    },
     logger:
       logger === false
         ? false
@@ -93,6 +105,26 @@ export function buildApp({ pool, logger = false }: AppDeps): FastifyInstance {
 
   app.addHook('onRequest', (request, reply, done) => {
     void reply.header('x-request-id', request.id);
+    done();
+  });
+  app.addHook('preValidation', (request, _reply, done) => {
+    if (
+      request.method === 'POST' &&
+      typeof request.body === 'object' &&
+      request.body !== null &&
+      !Array.isArray(request.body) &&
+      (Object.prototype.hasOwnProperty.call(request.body, '__proto__') ||
+        Object.prototype.hasOwnProperty.call(request.body, 'constructor'))
+    ) {
+      throw new ApiError(400, 'invalid_request', 'Request is not valid');
+    }
+    if (
+      request.method === 'POST' &&
+      request.body === undefined &&
+      request.headers['content-type']?.startsWith('application/json')
+    ) {
+      throw new ApiError(400, 'invalid_request', 'Request is not valid');
+    }
     done();
   });
 
