@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import type { Pool } from 'pg';
 import { PUBLIC_PATHS } from './auth/access.js';
@@ -101,4 +102,3 @@ export function buildApp({ pool, logger = false }: AppDeps): FastifyInstance {
 
   return app;
 }
-import { randomUUID } from 'node:crypto';
