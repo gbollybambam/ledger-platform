@@ -68,6 +68,9 @@ export function buildApp({ pool, logger = false }: AppDeps): FastifyInstance {
     requestIdHeader: false,
     genReqId: () => randomUUID(),
   });
+  app.addContentTypeParser('text/plain', { parseAs: 'string' }, (_request, body, done) => {
+    done(null, body);
+  });
 
   const routeTable = new Set<string>();
   app.decorate('routeTable', routeTable);
