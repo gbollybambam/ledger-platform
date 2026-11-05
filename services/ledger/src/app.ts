@@ -1,11 +1,13 @@
-import { randomUUID } from 'node:crypto';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import type { Pool } from 'pg';
 import { PUBLIC_PATHS } from './auth/access.js';
 import { registerAuthentication } from './auth/authenticate.js';
-import { errorBody, registerErrorHandling } from './http/errors.js';
+import { registerErrorHandling } from './http/errors.js';
 import { registerHealthRoutes } from './http/health.js';
 import { registerWhoamiRoute } from './http/whoami.js';
+import { formatSchemaError } from './http/validation.js';
+import { registerAccountRoutes } from './accounts/routes.js';
+import { registerCurrencyRoutes } from './currencies/routes.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -34,6 +36,16 @@ const IGNORED_METHODS = new Set(['HEAD', 'OPTIONS']);
 
 export function buildApp({ pool, logger = false }: AppDeps): FastifyInstance {
   const app = Fastify({
+    bodyLimit: 65536,
+    ajv: {
+      customOptions: {
+        coerceTypes: false,
+        removeAdditional: false,
+        useDefaults: false,
+        allErrors: false,
+      },
+    },
+    schemaErrorFormatter: formatSchemaError,
     logger:
       logger === false
         ? false
@@ -51,14 +63,6 @@ export function buildApp({ pool, logger = false }: AppDeps): FastifyInstance {
                 censor: '[Redact]',
               },
             },
-    frameworkErrors: (_error, _request, reply) => {
-      const requestId = randomUUID();
-      reply.raw.statusCode = 401;
-      reply.raw.setHeader('x-request-id', requestId);
-      reply.raw.setHeader('content-type', 'application/json; charset=utf-8');
-      reply.raw.setHeader('www-authenticate', 'Bearer');
-      reply.raw.end(JSON.stringify(errorBody('unauthorized', 'Unauthorized', requestId)));
-    },
     // Always make our own request ID. Never trust one sent by a client.
     requestIdHeader: false,
     genReqId: () => randomUUID(),
@@ -92,6 +96,9 @@ export function buildApp({ pool, logger = false }: AppDeps): FastifyInstance {
   registerAuthentication(app, pool);
   registerHealthRoutes(app, pool);
   registerWhoamiRoute(app);
+  registerAccountRoutes(app, pool);
+  registerCurrencyRoutes(app, pool);
 
   return app;
 }
+import { randomUUID } from 'node:crypto';

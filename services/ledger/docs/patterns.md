@@ -39,6 +39,19 @@ app.get('/v1/accounts/:id', { config: { access: 'ledger:read' } }, handler);
 - A validation error is 400 `invalid_request`: `Request is not valid`, or `Request is not valid: <field>` for a field named in our own schemas.
 - Unmatched `text/plain` bodies fail validation (400). A missing or unknown content type is 415. A body over the limit is 413.
 
+### Writing a validated endpoint
+
+- Define a schema beside the route and set `additionalProperties: false`.
+- List required fields explicitly; do not rely on defaults or coercion.
+- Use fixed patterns for identifiers, names, currencies, and query values.
+- Give the route an explicit `access` value.
+- Type the route request with its validated body, params, or query shape.
+- Keep validation errors generic and pass them through `formatSchemaError`.
+- Map framework 4xx errors to fixed messages in the central error handler.
+- Keep SQL in the feature's `sql.ts` module and parameterize every value.
+- Return the public representation, not database totals or internal columns.
+- Add the route and every response to the OpenAPI contract in the same change.
+
 ## 5. Money and SQL
 
 - Money is `bigint` in code and an integer string in the API. Never `number`.
