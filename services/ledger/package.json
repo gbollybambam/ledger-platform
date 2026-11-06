@@ -30,7 +30,7 @@
     "openapi:lint": "tsx scripts/validate-openapi.ts"
   },
   "dependencies": {
-    "fastify": "^5.12.7",
+    "fastify": "^5.12.8",
     "node-pg-migrate": "^9.0.0",
     "pg": "^8.23.1"
   },
