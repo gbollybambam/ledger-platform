@@ -57,7 +57,11 @@ export function buildApp({ pool, logger = false }: AppDeps): FastifyInstance {
         return;
       }
       reply.raw.statusCode = error.statusCode ?? 500;
-      reply.raw.end(error.message);
+      reply.raw.setHeader('content-type', 'application/json; charset=utf-8');
+      reply.raw.setHeader('x-request-id', request.id);
+      reply.raw.end(
+        JSON.stringify(errorBody('internal_error', 'Something went wrong', request.id)),
+      );
     },
     logger:
       logger === false

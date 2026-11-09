@@ -164,15 +164,15 @@ Create: two migrations, `src/accounts/*`, `src/currencies/routes.ts`, `src/http/
 Change: `src/app.ts`, `src/http/errors.ts`, `openapi/ledger.v1.yaml`, `docs/patterns.md` (add "Writing a validated endpoint", about 15 lines), `CHANGELOG.md`, this file.
 
 ## Done when
-- [ ] All rules in docs/invariants.md still hold
-- [ ] Currencies and accounts tables behave exactly as the SQL says, proven by attempting each forbidden change as the right role (D1 to D12)
-- [ ] Every kind gets the right normal balance, and clients cannot set it (A1, A3)
-- [ ] Input is strict: wrong types, extra fields, bad bodies, bad content types, and oversize bodies are refused with the fixed messages, and no client text is ever echoed (A2, A3, A4, V1 to V5)
-- [ ] Unknown currency gives 422, allow_negative outside equity gives 422, a duplicate external_id gives 409 (A5, A6, A7)
-- [ ] Creating is idempotent and attributed to the caller (A8, A13)
-- [ ] Scopes are exact, and lookups default to the caller's own accounts (A9, A10)
-- [ ] The OpenAPI file documents all four operations (O1)
-- [ ] Lint, format, typecheck, openapi:lint, tests, and build pass. CI is green
+- [x] All rules in docs/invariants.md still hold
+- [x] Currencies and accounts tables behave exactly as the SQL says, proven by attempting each forbidden change as the right role (D1 to D12)
+- [x] Every kind gets the right normal balance, and clients cannot set it (A1, A3)
+- [x] Input is strict: wrong types, extra fields, bad bodies, bad content types, and oversize bodies are refused with the fixed messages, and no client text is ever echoed (A2, A3, A4, V1 to V5)
+- [x] Unknown currency gives 422, allow_negative outside equity gives 422, a duplicate external_id gives 409 (A5, A6, A7)
+- [x] Creating is idempotent and attributed to the caller (A8, A13)
+- [x] Scopes are exact, and lookups default to the caller's own accounts (A9, A10)
+- [x] The OpenAPI file documents all four operations (O1)
+- [x] Lint, format, typecheck, openapi:lint, tests, and build pass. CI is green
 
 ## Test plan
 S = sabotage required. D rows are **behavioral database tests**: attempt the forbidden statement and assert the exact SQLSTATE and constraint name. Never read the SQL file. No sabotage needed for D rows.
@@ -242,9 +242,9 @@ Planner review: yes (src and migrations diff, test names, S table).
 | Done check | not tracked |
 | Total | not tracked |
 
-Questions asked: 0 | Fix-now findings: 0 | Minutes in total: not tracked
+Questions asked: 0 | Fix-now findings: 1 | Minutes in total: not tracked
 
 ## Review log
 - Self-review: complete. All S rows were sabotaged to red and restored; full checks passed.
 - Independent planner review: not run in this CLI session.
-- Pass 2 (only if there were fix-now items): not needed.
+- Pass 2 (only if there were fix-now items): framework error fallback now returns the fixed internal error body instead of exposing `error.message`.
