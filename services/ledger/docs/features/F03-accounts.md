@@ -172,7 +172,7 @@ Change: `src/app.ts`, `src/http/errors.ts`, `openapi/ledger.v1.yaml`, `docs/patt
 - [x] Creating is idempotent and attributed to the caller (A8, A13)
 - [x] Scopes are exact, and lookups default to the caller's own accounts (A9, A10)
 - [x] The OpenAPI file documents all four operations (O1)
-- [x] Lint, format, typecheck, openapi:lint, tests, and build pass. CI is green
+- [x] Lint, format, typecheck, openapi:lint, tests, and build pass locally. CI is pending
 
 ## Test plan
 S = sabotage required. D rows are **behavioral database tests**: attempt the forbidden statement and assert the exact SQLSTATE and constraint name. Never read the SQL file. No sabotage needed for D rows.
