@@ -19,6 +19,10 @@ tags:
     description: Liveness and readiness. No authentication.
   - name: Identity
     description: Client identity and authorization.
+  - name: Accounts
+    description: Immutable account identities.
+  - name: Currencies
+    description: Allowed ledger currencies.
 paths:
   /health:
     get:
@@ -104,6 +108,126 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /v1/accounts:
+    post:
+      tags: [Accounts]
+      operationId: createAccount
+      summary: Create an empty account.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAccountRequest'
+      responses:
+        '201':
+          description: The created account.
+          headers:
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/Busy'
+    get:
+      tags: [Accounts]
+      operationId: findAccounts
+      summary: Find an account by external ID.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: external_id
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9._:-]{1,128}$'
+        - name: client
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^[a-z][a-z0-9-]{1,39}$'
+      responses:
+        '200':
+          description: Matching account, or an empty list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountList'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /v1/accounts/{id}:
+    get:
+      tags: [Accounts]
+      operationId: getAccount
+      summary: Read an account by ID.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/currencies:
+    get:
+      tags: [Currencies]
+      operationId: listCurrencies
+      summary: List allowed currencies.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Allowed currencies sorted by code.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrencyList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 components:
   securitySchemes:
     bearerAuth:
@@ -146,10 +270,94 @@ components:
       description: A positive integer in minor units, as a string. No decimals. No sign.
       example: '150000'
     Currency:
-      type: string
-      pattern: '^[A-Z]{3}$'
-      description: An ISO 4217 code that the ledger allows.
-      example: NGN
+      type: object
+      required: [code, minor_exponent]
+      properties:
+        code:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        minor_exponent:
+          type: integer
+          minimum: 0
+          maximum: 4
+    CreateAccountRequest:
+      type: object
+      additionalProperties: false
+      required: [name, kind, currency]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          pattern: '^[^\p{Cc}\s](?:[^\p{Cc}]*[^\p{Cc}\s])?$'
+        kind:
+          type: string
+          enum: [asset, liability, equity, revenue, expense]
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        allow_negative:
+          type: boolean
+        external_id:
+          type: string
+          pattern: '^[A-Za-z0-9._:-]{1,128}$'
+    Account:
+      type: object
+      required:
+        [
+          id,
+          client_id,
+          name,
+          kind,
+          normal_balance,
+          currency,
+          allow_negative,
+          external_id,
+          created_at,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        client_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [asset, liability, equity, revenue, expense]
+        normal_balance:
+          type: string
+          enum: [debit, credit]
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        allow_negative:
+          type: boolean
+        external_id:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+    AccountList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          maxItems: 1
+          items:
+            $ref: '#/components/schemas/Account'
+    CurrencyList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Currency'
     Error:
       type: object
       required: [error]
@@ -210,6 +418,18 @@ components:
       headers:
         Retry-After:
           $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    PayloadTooLarge:
+      description: The request body is too large.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    UnsupportedMediaType:
+      description: The content type is not supported.
       content:
         application/json:
           schema:

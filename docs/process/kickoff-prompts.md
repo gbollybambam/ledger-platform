@@ -26,17 +26,44 @@ Run only the new test files, with output piped through `| tail -40`. Report a ta
 ## 3. Session B: build and prove
 
 ```
-Implement <feature file> one Done-when rule at a time.
-- After each rule: run only the affected test file and `npm run typecheck` (output `| tail -40`). Commit with a Conventional Commit.
-- Never change, skip, or delete a test to pass. If a test is wrong, stop and explain.
-- Add nothing the spec does not ask for. No new dependency without asking.
-- Follow services/ledger/docs/patterns.md and the money and database rules in AGENTS.md. Change OpenAPI in the same commit as the code.
-- Stuck rule: same failure 3 times or 30 minutes: stop and write the 5-line stuck report.
-When all rules pass:
-A. SABOTAGE: for each row marked S in the Test plan, make the one-line sabotage, run only that test, show it red (one line), then `git checkout` the file and show green. Never commit a sabotage. A test that stays green is weak: fix it. For rows without S, answer "would this pass without the feature?" and fix any that would.
-B. SELF-REVIEW: read docs/process/review-checklist.md and check your diff (`git diff main...HEAD`, not printed in full). Fix violations. Search the docs for removed or renamed names.
-C. Run the full check once.
-Report: commits (one line each), the S table (row | sabotage | red | restored), checklist items fixed, full-check result with counts and durations. Max 60 lines.
+Implement exactly the feature file named by the caller. Do not infer a different feature.
+
+PRECHECK (must finish before editing):
+1. Confirm the feature file exists and contains a Done-when list and Test plan.
+2. Read its Status, Done-when list, Files, and Test plan.
+3. Check `git status --short` and stop if existing changes overlap files you must edit.
+4. Build a fixed queue from the Done-when list. One queue item is one implementation rule.
+   Test-plan rows are evidence for those rules, not additional implementation rules.
+5. If any precheck fails, stop immediately and report the failed check in at most 10 lines.
+
+For exactly one queue item per turn:
+1. State the item number and quote its exact Done-when text.
+2. Identify the affected test file(s). If none exists, stop and report that.
+3. Write or update only the tests required for this item. Never change, skip, weaken, or
+   delete a test to make it pass. If a test is wrong, stop and explain.
+4. Implement only this item and its direct dependencies. Do not start the next item.
+5. Run only the affected test file(s), then run `npm run typecheck | tail -40`.
+6. If either check fails, retry at most twice. On the third failure of the same cause,
+   stop and write the five-line stuck report.
+7. If both checks pass, inspect `git diff --stat`, commit with a Conventional Commit,
+   report the commit, and STOP. Wait for the next turn.
+
+Rules:
+- Follow `services/ledger/docs/patterns.md` and the money/database rules in AGENTS.md.
+- Change OpenAPI in the same commit as the code it documents.
+- Do not add dependencies without asking.
+- Do not update AIC metrics unless the caller provides the value.
+- Do not run sabotage, self-review, or the full check in this prompt.
+
+Only after the caller explicitly says `FINALIZE <feature file>`:
+1. Run sabotage for rows marked S. Make one temporary production-line change, run only
+   that row's test, record red output, restore that exact line, and record green output.
+   Never use `git checkout` on a whole file and never commit sabotage.
+2. For rows without S, answer whether the test would pass without the feature and fix weak tests.
+3. Read `docs/process/review-checklist.md`, inspect `git diff main...HEAD` without printing
+   the full diff, and fix violations.
+4. Run the full check once.
+5. Report commits, the S table, checklist fixes, and full-check counts/duration in at most 60 lines.
 ```
 
 ## 4. Review (give to Gemini with review.diff)

@@ -47,8 +47,15 @@ export function registerErrorHandling(app: FastifyInstance): void {
       if (status === 401) {
         reply.header('www-authenticate', 'Bearer');
       }
-      const code = status === 400 ? 'invalid_request' : 'client_error';
-      return reply.status(status).send(errorBody(code, error.message, request.id));
+      const fixed =
+        status === 400
+          ? { code: 'invalid_request', message: 'Request is not valid' }
+          : status === 413
+            ? { code: 'payload_too_large', message: 'Request body is too large' }
+            : status === 415
+              ? { code: 'unsupported_media_type', message: 'Unsupported content type' }
+              : { code: 'client_error', message: 'Request could not be processed' };
+      return reply.status(status).send(errorBody(fixed.code, fixed.message, request.id));
     }
 
     // Never send internal details to the client. Log them instead.
